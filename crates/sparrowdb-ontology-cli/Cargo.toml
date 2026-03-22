@@ -1,0 +1,25 @@
+[package]
+name = "sparrowdb-ontology-cli"
+version = "0.1.0"
+edition = "2021"
+description = "CLI for Sparrow Ontology — ontology-aware semantic layer over SparrowDB"
+license = "MIT"
+
+[[bin]]
+name = "sparrow-ontology"
+path = "src/main.rs"
+
+[dependencies]
+sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core" }
+sparrowdb-ontology-mcp = { path = "../sparrowdb-ontology-mcp" }
+sparrowdb = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+serde_json = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "test_cli_phase3"
+path = "../../tests/integration/test_cli_phase3.rs"
