@@ -166,9 +166,11 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
 pub fn create_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
     let args = params.unwrap_or(json!({}));
 
-    let label = args["label"]
+    // Accept both "class_name" (schema-advertised) and "label" (legacy) for backward compat.
+    let label = args["class_name"]
         .as_str()
-        .ok_or_else(|| mcp_error(-32602, "Missing required param: label", json!({})))?;
+        .or_else(|| args["label"].as_str())
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: class_name", json!({})))?;
     let preserve_source_terms = args["preserve_source_terms"].as_bool().unwrap_or(false);
 
     // Step 1: resolve label
@@ -399,9 +401,11 @@ pub fn update_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
 pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
     let args = params.unwrap_or(json!({}));
 
-    let label = args["label"]
+    // Accept both "class_name" (schema-advertised) and "label" (legacy) for backward compat.
+    let label = args["class_name"]
         .as_str()
-        .ok_or_else(|| mcp_error(-32602, "Missing required param: label", json!({})))?;
+        .or_else(|| args["label"].as_str())
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: class_name", json!({})))?;
     let include_subclasses = args["include_subclasses"].as_bool().unwrap_or(false);
     let limit = args["limit"].as_u64().unwrap_or(20) as usize;
     let offset = args["offset"].as_u64().unwrap_or(0) as usize;
@@ -855,6 +859,19 @@ pub fn validate(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
                 .collect()
         };
 
+        // Get all known relation names to skip them when checking node labels
+        // (CALL db.schema() returns both label names and relationship types as strings)
+        let known_relations: std::collections::HashSet<String> = {
+            let q = format!("MATCH (r:{RELATION_LABEL}) RETURN r.name");
+            let result = execute_or_empty(db, &q)?;
+            result
+                .rows
+                .iter()
+                .filter_map(|row| row.first())
+                .filter_map(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
+                .collect()
+        };
+
         // Use CALL db.schema() to get all labels
         // If not available, fall back to scanning via MATCH (n) RETURN DISTINCT labels(n)[0]
         let all_labels: Vec<String> = {
@@ -916,6 +933,10 @@ pub fn validate(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
             }
             // Skip schema metadata labels from CALL db.schema()
             if schema_meta_labels.contains(raw_label.as_str()) {
+                continue;
+            }
+            // Skip relation types — CALL db.schema() returns both node labels and rel types
+            if known_relations.contains(raw_label) {
                 continue;
             }
             nodes_scanned += 1;
