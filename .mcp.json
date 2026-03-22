@@ -1,5 +1,10 @@
 {
   "mcpServers": {
+    "sparrow-ontology": {
+      "command": "/Volumes/Dev/SparrowOntology/target/debug/sparrow-ontology-mcp",
+      "args": ["--db", "/tmp/sparrow-ontology-e2e-test.db"],
+      "type": "stdio"
+    },
     "agent-bus-channel": {
       "command": "/Users/ryaker/.nvm/versions/node/v22.22.0/bin/node",
       "args": [
