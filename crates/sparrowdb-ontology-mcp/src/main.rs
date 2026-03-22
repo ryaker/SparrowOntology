@@ -12,6 +12,7 @@ use std::path::PathBuf;
 #[derive(Parser, Debug)]
 #[command(name = "sparrow-ontology-mcp")]
 #[command(about = "MCP server for Sparrow Ontology — ontology-aware semantic layer over SparrowDB")]
+#[command(version)]
 struct Args {
     /// Path to the SparrowDB database directory
     #[arg(long)]

@@ -10,7 +10,7 @@ use sparrowdb_ontology_mcp::tools::handle_tool_call;
 // ── CLI definition ────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
-#[command(name = "sparrow-ontology", about = "Sparrow Ontology CLI")]
+#[command(name = "sparrow-ontology", about = "Sparrow Ontology CLI", version)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,

@@ -1,0 +1,146 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    name: Build Linux (${{ matrix.target }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            use_cross: false
+          - target: aarch64-unknown-linux-gnu
+            use_cross: true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Install cross
+        if: matrix.use_cross
+        run: cargo install cross --locked
+
+      - name: Build (native)
+        if: "!matrix.use_cross"
+        run: >
+          cargo build --release
+          --target ${{ matrix.target }}
+          -p sparrowdb-ontology-cli
+          -p sparrowdb-ontology-mcp
+
+      - name: Build (cross)
+        if: matrix.use_cross
+        run: >
+          cross build --release
+          --target ${{ matrix.target }}
+          -p sparrowdb-ontology-cli
+          -p sparrowdb-ontology-mcp
+
+      - name: Package
+        run: |
+          TARGET=${{ matrix.target }}
+          ARCHIVE=sparrow-ontology-${TARGET}.tar.gz
+          cp target/${TARGET}/release/sparrow-ontology sparrow-ontology
+          cp target/${TARGET}/release/sparrow-ontology-mcp sparrow-ontology-mcp
+          tar czf "${ARCHIVE}" sparrow-ontology sparrow-ontology-mcp
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
+
+  build-macos:
+    name: Build macOS (${{ matrix.target }})
+    runs-on: macos-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - aarch64-apple-darwin
+          - x86_64-apple-darwin
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.target }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Build
+        run: >
+          cargo build --release
+          --target ${{ matrix.target }}
+          -p sparrowdb-ontology-cli
+          -p sparrowdb-ontology-mcp
+
+      - name: Package
+        run: |
+          TARGET=${{ matrix.target }}
+          ARCHIVE=sparrow-ontology-${TARGET}.tar.gz
+          cp target/${TARGET}/release/sparrow-ontology sparrow-ontology
+          cp target/${TARGET}/release/sparrow-ontology-mcp sparrow-ontology-mcp
+          tar czf "${ARCHIVE}" sparrow-ontology sparrow-ontology-mcp
+          echo "ARCHIVE=${ARCHIVE}" >> "$GITHUB_ENV"
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
+
+  build-windows:
+    name: Build Windows (x86_64-pc-windows-msvc)
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-pc-windows-msvc
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: x86_64-pc-windows-msvc
+
+      - name: Build
+        run: >
+          cargo build --release
+          --target x86_64-pc-windows-msvc
+          -p sparrowdb-ontology-cli
+          -p sparrowdb-ontology-mcp
+
+      - name: Package
+        shell: pwsh
+        run: |
+          $target = "x86_64-pc-windows-msvc"
+          $archive = "sparrow-ontology-${target}.zip"
+          Copy-Item "target\${target}\release\sparrow-ontology.exe" .
+          Copy-Item "target\${target}\release\sparrow-ontology-mcp.exe" .
+          Compress-Archive -Path sparrow-ontology.exe, sparrow-ontology-mcp.exe -DestinationPath $archive
+          "ARCHIVE=$archive" | Out-File -FilePath $env:GITHUB_ENV -Append
+
+      - name: Upload to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.ARCHIVE }}
