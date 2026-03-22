@@ -242,9 +242,11 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
     let from_id_str = args["from_id"]
         .as_str()
         .ok_or_else(|| mcp_error(-32602, "Missing required param: from_id", json!({})))?;
-    let rel_type = args["rel_type"]
+    // Accept both "relation_name" (schema-advertised) and "rel_type" (legacy) for backward compat.
+    let rel_type = args["relation_name"]
         .as_str()
-        .ok_or_else(|| mcp_error(-32602, "Missing required param: rel_type", json!({})))?;
+        .or_else(|| args["rel_type"].as_str())
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: relation_name", json!({})))?;
     let to_id_str = args["to_id"]
         .as_str()
         .ok_or_else(|| mcp_error(-32602, "Missing required param: to_id", json!({})))?;

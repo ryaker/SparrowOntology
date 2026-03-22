@@ -198,7 +198,7 @@ fn ac07_create_entity_person() {
     let result = call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     assert_eq!(
         result["created"].as_bool().unwrap_or(false),
@@ -225,7 +225,7 @@ fn ac08_create_entity_via_alias() {
     let result = call(
         &db,
         "create_entity",
-        json!({"label": "Human", "properties": {"name": "Bob"}}),
+        json!({"class_name": "Human", "properties": {"name": "Bob"}}),
     );
     assert_eq!(
         result["created"].as_bool().unwrap_or(false),
@@ -254,7 +254,7 @@ fn ac09_create_entity_preserve_source_terms() {
         &db,
         "create_entity",
         json!({
-            "label": "Human",
+            "class_name": "Human",
             "properties": {"name": "Bob"},
             "preserve_source_terms": true
         }),
@@ -280,7 +280,7 @@ fn ac10_create_entity_unknown_class_error() {
     let err = call_err(
         &db,
         "create_entity",
-        json!({"label": "Stakeholder", "properties": {}}),
+        json!({"class_name": "Stakeholder", "properties": {}}),
     );
     let data = &err["data"];
     assert_eq!(
@@ -304,7 +304,7 @@ fn ac11_create_relationship_valid() {
     let alice = call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     let alice_id = alice["node_id"].as_str().expect("node_id should be present");
 
@@ -312,7 +312,7 @@ fn ac11_create_relationship_valid() {
     let acme = call(
         &db,
         "create_entity",
-        json!({"label": "Organization", "properties": {"name": "Acme"}}),
+        json!({"class_name": "Organization", "properties": {"name": "Acme"}}),
     );
     let acme_id = acme["node_id"].as_str().expect("node_id should be present");
 
@@ -320,7 +320,7 @@ fn ac11_create_relationship_valid() {
     let result = call(
         &db,
         "create_relationship",
-        json!({"from_id": alice_id, "rel_type": "WORKS_FOR", "to_id": acme_id}),
+        json!({"from_id": alice_id, "relation_name": "WORKS_FOR", "to_id": acme_id}),
     );
     assert_eq!(
         result["created"].as_bool().unwrap_or(false),
@@ -346,14 +346,14 @@ fn ac12_create_relationship_via_alias() {
     let alice = call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     let alice_id = alice["node_id"].as_str().expect("node_id should be present");
 
     let acme = call(
         &db,
         "create_entity",
-        json!({"label": "Organization", "properties": {"name": "Acme"}}),
+        json!({"class_name": "Organization", "properties": {"name": "Acme"}}),
     );
     let acme_id = acme["node_id"].as_str().expect("node_id should be present");
 
@@ -361,7 +361,7 @@ fn ac12_create_relationship_via_alias() {
     let result = call(
         &db,
         "create_relationship",
-        json!({"from_id": alice_id, "rel_type": "EMPLOYED_BY", "to_id": acme_id}),
+        json!({"from_id": alice_id, "relation_name": "EMPLOYED_BY", "to_id": acme_id}),
     );
     assert_eq!(
         result["created"].as_bool().unwrap_or(false),
@@ -380,14 +380,14 @@ fn ac13_create_relationship_invalid_domain() {
     let acme = call(
         &db,
         "create_entity",
-        json!({"label": "Organization", "properties": {"name": "Acme"}}),
+        json!({"class_name": "Organization", "properties": {"name": "Acme"}}),
     );
     let acme_id = acme["node_id"].as_str().expect("node_id should be present");
 
     let alice = call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     let alice_id = alice["node_id"].as_str().expect("node_id should be present");
 
@@ -395,7 +395,7 @@ fn ac13_create_relationship_invalid_domain() {
     let err = call_err(
         &db,
         "create_relationship",
-        json!({"from_id": acme_id, "rel_type": "WORKS_FOR", "to_id": alice_id}),
+        json!({"from_id": acme_id, "relation_name": "WORKS_FOR", "to_id": alice_id}),
     );
     let data = &err["data"];
     assert_eq!(
@@ -419,7 +419,7 @@ fn ac14_update_entity_validates() {
     let result = call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     let node_id = result["node_id"].as_str().expect("node_id should be present");
 
@@ -459,15 +459,15 @@ fn ac15_find_entities_by_label() {
     call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Bob"}}),
+        json!({"class_name": "Person", "properties": {"name": "Bob"}}),
     );
 
-    let result = call(&db, "find_entities", json!({"label": "Person"}));
+    let result = call(&db, "find_entities", json!({"class_name": "Person"}));
     let entities = result["entities"].as_array().expect("entities should be an array");
     assert_eq!(
         entities.len(),
@@ -494,11 +494,11 @@ fn ac16_find_entities_via_alias() {
     call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
 
     // Search via alias "Human"
-    let result = call(&db, "find_entities", json!({"label": "Human"}));
+    let result = call(&db, "find_entities", json!({"class_name": "Human"}));
     let entities = result["entities"].as_array().expect("entities should be an array");
     assert!(
         !entities.is_empty(),
@@ -536,14 +536,14 @@ fn ac17_find_entities_include_subclasses() {
     call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
 
     // Find Person with include_subclasses=true — should include Employee instances
     let result = call(
         &db,
         "find_entities",
-        json!({"label": "Person", "include_subclasses": true}),
+        json!({"class_name": "Person", "include_subclasses": true}),
     );
     let entities = result["entities"].as_array().expect("entities should be an array");
     assert!(
@@ -571,18 +571,18 @@ fn ac18_find_entities_with_where_filter() {
     call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Alice"}}),
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
     call(
         &db,
         "create_entity",
-        json!({"label": "Person", "properties": {"name": "Bob"}}),
+        json!({"class_name": "Person", "properties": {"name": "Bob"}}),
     );
 
     let result = call(
         &db,
         "find_entities",
-        json!({"label": "Person", "where": {"name": "Alice"}}),
+        json!({"class_name": "Person", "where": {"name": "Alice"}}),
     );
     let entities = result["entities"].as_array().expect("entities should be an array");
     assert_eq!(
@@ -734,5 +734,51 @@ fn ac22_validate_reports_violations() {
     assert!(
         !violations.is_empty(),
         "violations should be non-empty when unknown-label node exists, got: {result}"
+    );
+}
+
+// ── AC23: validate with real entities+relationships returns no false positives ─
+// Regression test: CALL db.schema() returns both node labels and relationship
+// type names. Without filtering, relation names like "WORKS_FOR" were flagged
+// as UnknownClass violations on graphs that had edges.
+
+#[test]
+fn ac23_validate_no_false_positives_with_relationships() {
+    let (_dir, db) = initialized_db();
+
+    // Create two entities
+    let alice = call(
+        &db,
+        "create_entity",
+        json!({"class_name": "Person", "properties": {"name": "Alice"}}),
+    );
+    let alice_id = alice["node_id"].as_str().expect("node_id").to_string();
+
+    let acme = call(
+        &db,
+        "create_entity",
+        json!({"class_name": "Organization", "properties": {"name": "Acme"}}),
+    );
+    let acme_id = acme["node_id"].as_str().expect("node_id").to_string();
+
+    // Create a relationship between them
+    let rel = call(
+        &db,
+        "create_relationship",
+        json!({"from_id": alice_id, "to_id": acme_id, "relation_name": "WORKS_FOR"}),
+    );
+    assert!(rel["created"].as_bool().unwrap_or(false), "relationship should be created");
+
+    // Validate — must not produce false-positive violations for "WORKS_FOR" label
+    let result = call(&db, "validate", json!({"scope": "full_graph"}));
+    assert_eq!(
+        result["valid"].as_bool().unwrap_or(false),
+        true,
+        "validate should be clean after creating typed entities + relationship, got: {result}"
+    );
+    let violations = result["violations"].as_array().expect("violations array");
+    assert!(
+        violations.is_empty(),
+        "relation type names must not appear as UnknownClass violations, got: {violations:?}"
     );
 }
