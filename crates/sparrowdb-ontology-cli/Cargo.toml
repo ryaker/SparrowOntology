@@ -9,6 +9,10 @@ license = "MIT"
 name = "sparrow-ontology"
 path = "src/main.rs"
 
+[lib]
+name = "sparrowdb_ontology_cli"
+path = "src/lib.rs"
+
 [dependencies]
 sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core" }
 sparrowdb-ontology-mcp = { path = "../sparrowdb-ontology-mcp" }
