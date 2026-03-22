@@ -1,0 +1,14 @@
+{
+  "mcpServers": {
+    "agent-bus-channel": {
+      "command": "/Users/ryaker/.nvm/versions/node/v22.22.0/bin/node",
+      "args": [
+        "/Users/ryaker/Dev/agent-bus/dist/channel/agent-bus-channel.js"
+      ],
+      "env": {
+        "AGENT_BUS_PROJECT": "SparrowOntology"
+      },
+      "type": "stdio"
+    }
+  }
+}

@@ -1,0 +1,40 @@
+[package]
+name = "sparrowdb-ontology-core"
+version = "0.1.0"
+edition = "2021"
+description = "Ontology semantic layer for SparrowDB"
+license = "MIT"
+
+[dependencies]
+# SparrowDB engine — switch to crates.io version when SPA-210 ships
+sparrowdb = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+# Sub-crate deps needed for QueryResult, Value(exec), Error, and Value(storage) types.
+# sparrowdb does not re-export them yet — TODO: simplify once SPA-210 publishes.
+# SPA-208: __SO_ prefix is protected at Cypher layer; we use WriteTx low-level API
+# for seeding (bypasses Cypher-layer reservation check, which is correct behavior).
+sparrowdb-execution = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb-storage = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+uuid = { version = "1", features = ["v4"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "test_world_model"
+path = "../../tests/integration/test_world_model.rs"
+
+[[test]]
+name = "test_alias_resolution"
+path = "../../tests/integration/test_alias_resolution.rs"
+
+[[test]]
+name = "test_validation"
+path = "../../tests/integration/test_validation.rs"
+
+[[test]]
+name = "test_hierarchy"
+path = "../../tests/integration/test_hierarchy.rs"

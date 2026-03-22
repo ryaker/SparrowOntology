@@ -1,0 +1,9 @@
+[workspace]
+members = ["crates/sparrowdb-ontology-core"]
+resolver = "2"
+
+[patch."https://github.com/ryaker/SparrowDB"]
+sparrowdb = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb" }
+sparrowdb-execution = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-execution" }
+sparrowdb-common = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-common" }
+sparrowdb-storage = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage" }

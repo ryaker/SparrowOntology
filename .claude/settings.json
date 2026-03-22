@@ -1,0 +1,37 @@
+{
+  "hooks": {
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Volumes/Dev/SparrowOntology/.claude/hooks/user-prompt-submit-inbox.sh",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Volumes/Dev/SparrowOntology/.claude/hooks/session-start-register.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "/Volumes/Dev/SparrowOntology/.claude/hooks/session-stop-profile.sh",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}
