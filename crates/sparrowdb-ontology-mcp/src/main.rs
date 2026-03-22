@@ -212,6 +212,20 @@ fn tool_list() -> Value {
                 }
             },
             {
+                "name": "add_property",
+                "description": "Declare a typed property on an existing class. Enables validate_entity to type-check and require the field.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "owner": {"type": "string", "description": "Class name or alias that owns this property"},
+                        "name": {"type": "string", "description": "Property key name (must not start with __so_)"},
+                        "datatype": {"type": "string", "enum": ["string", "int64", "float64", "bool", "date", "variant"], "description": "Property value type (default: string)"},
+                        "required": {"type": "boolean", "description": "If true, create_entity will reject entities missing this property (default: false)"}
+                    },
+                    "required": ["owner", "name"]
+                }
+            },
+            {
                 "name": "define_subclass",
                 "description": "Create a SUBCLASS_OF edge from child class to parent class. Cycle-safe.",
                 "inputSchema": {
