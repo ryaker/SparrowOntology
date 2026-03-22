@@ -2,7 +2,9 @@
 members = ["crates/sparrowdb-ontology-core", "crates/sparrowdb-ontology-mcp", "crates/sparrowdb-ontology-cli"]
 resolver = "2"
 
-# NOTE: when SPA-136/137/138 land and ~/Dev/SparrowDB compiles clean, restore path patch:
+# Restore path patch once SPA-136/137/138 WIP fixes ShortestPathExpr import in engine.rs.
 # [patch."https://github.com/ryaker/SparrowDB"]
 # sparrowdb = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb" }
-# etc.
+# sparrowdb-execution = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-execution" }
+# sparrowdb-common = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-common" }
+# sparrowdb-storage = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage" }

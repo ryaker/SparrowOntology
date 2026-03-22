@@ -1,0 +1,18 @@
+/Volumes/Dev/SparrowOntology/target/release/deps/sparrowdb_storage-a960ce6305a89592.d: /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/lib.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/metapage.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/fulltext_index.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/encryption.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/maintenance.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/mod.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/codec.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/replay.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/writer.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/csr.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/node_store.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/edge_store.rs
+
+/Volumes/Dev/SparrowOntology/target/release/deps/libsparrowdb_storage-a960ce6305a89592.rlib: /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/lib.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/metapage.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/fulltext_index.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/encryption.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/maintenance.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/mod.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/codec.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/replay.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/writer.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/csr.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/node_store.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/edge_store.rs
+
+/Volumes/Dev/SparrowOntology/target/release/deps/libsparrowdb_storage-a960ce6305a89592.rmeta: /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/lib.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/metapage.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/fulltext_index.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/encryption.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/maintenance.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/mod.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/codec.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/replay.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/writer.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/csr.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/node_store.rs /Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/edge_store.rs
+
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/lib.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/metapage.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/fulltext_index.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/encryption.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/maintenance.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/mod.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/codec.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/replay.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/wal/writer.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/csr.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/node_store.rs:
+/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage/src/edge_store.rs:
