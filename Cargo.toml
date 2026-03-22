@@ -2,7 +2,10 @@
 members = ["crates/sparrowdb-ontology-core", "crates/sparrowdb-ontology-mcp", "crates/sparrowdb-ontology-cli"]
 resolver = "2"
 
-# Restore path patch once SPA-136/137/138 WIP fixes ShortestPathExpr import in engine.rs.
+# SPA-227 BLOCKED: SPA-224 fix was accidentally reverted in 4b21ebb.
+# engine.rs between d2fa6f8..4b21ebb removes dst_all_col_ids from execute_variable_length —
+# the exact code that made *1..N path queries work with __SO_-prefixed label+prop filters.
+# Stay pinned to d2fa6f8 until SparrowDB re-lands the SPA-224 fix on main.
 # [patch."https://github.com/ryaker/SparrowDB"]
 # sparrowdb = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb" }
 # sparrowdb-execution = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-execution" }
