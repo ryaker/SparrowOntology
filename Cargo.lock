@@ -586,6 +586,7 @@ dependencies = [
 [[package]]
 name = "sparrowdb"
 version = "0.1.0"
+source = "git+https://github.com/ryaker/SparrowDB?rev=d2fa6f8#d2fa6f847dc9c444c3daac9271d013a1aa810da3"
 dependencies = [
  "clap",
  "rand",
@@ -602,6 +603,7 @@ dependencies = [
 [[package]]
 name = "sparrowdb-catalog"
 version = "0.1.0"
+source = "git+https://github.com/ryaker/SparrowDB?rev=d2fa6f8#d2fa6f847dc9c444c3daac9271d013a1aa810da3"
 dependencies = [
  "crc32fast",
  "sparrowdb-common",
@@ -611,6 +613,7 @@ dependencies = [
 [[package]]
 name = "sparrowdb-common"
 version = "0.1.0"
+source = "git+https://github.com/ryaker/SparrowDB?rev=d2fa6f8#d2fa6f847dc9c444c3daac9271d013a1aa810da3"
 dependencies = [
  "crc32fast",
 ]
@@ -618,6 +621,7 @@ dependencies = [
 [[package]]
 name = "sparrowdb-cypher"
 version = "0.1.0"
+source = "git+https://github.com/ryaker/SparrowDB?rev=d2fa6f8#d2fa6f847dc9c444c3daac9271d013a1aa810da3"
 dependencies = [
  "sparrowdb-catalog",
  "sparrowdb-common",
@@ -626,6 +630,7 @@ dependencies = [
 [[package]]
 name = "sparrowdb-execution"
 version = "0.1.0"
+source = "git+https://github.com/ryaker/SparrowDB?rev=d2fa6f8#d2fa6f847dc9c444c3daac9271d013a1aa810da3"
 dependencies = [
  "bincode",
  "roaring",
@@ -687,6 +692,7 @@ dependencies = [
 [[package]]
 name = "sparrowdb-storage"
 version = "0.1.0"
+source = "git+https://github.com/ryaker/SparrowDB?rev=d2fa6f8#d2fa6f847dc9c444c3daac9271d013a1aa810da3"
 dependencies = [
  "chacha20poly1305",
  "crc32c",

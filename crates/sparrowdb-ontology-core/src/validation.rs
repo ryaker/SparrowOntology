@@ -131,13 +131,22 @@ impl<'a> ValidationContext<'a> {
         }
         let safe_class = escape_cypher_string(class_name);
         let safe_anc = escape_cypher_string(ancestor_name);
-        // Iterative BFS over single-hop queries (SPA-224: *N..M var-path broken on __SO_ labels).
-        // Walk SUBCLASS_OF edges from class_name upward; return true if ancestor_name is reached.
-        use crate::hierarchy::expand_subclasses;
-        // expand_subclasses walks REVERSE (sub → base), so we expand from ancestor_name
-        // and check if class_name is in the result set.
-        let reachable = expand_subclasses(self.db, ancestor_name, 20)?;
-        Ok(reachable.iter().any(|n| n == class_name))
+        // SPA-224 fixed in SparrowDB PR #98 — *1..N variable-length paths now work
+        // correctly on __SO_-prefixed labels. Single Cypher query suffices.
+        let q = format!(
+            "MATCH (c:__SO_Class {{name: '{safe_class}'}})-[:__SO_SUBCLASS_OF*1..20]->(a:__SO_Class {{name: '{safe_anc}'}}) \
+             RETURN c.name LIMIT 1"
+        );
+        let result = match self.db.execute(&q) {
+            Ok(r) => r,
+            Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
+            {
+                return Ok(false);
+            }
+            Err(e) => return Err(SoError::Storage(e)),
+        };
+        Ok(!result.rows.is_empty())
     }
 
     /// Return all OntologyProperty definitions attached to the class with `symbol_id`.

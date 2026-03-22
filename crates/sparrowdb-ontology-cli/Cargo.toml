@@ -16,8 +16,8 @@ path = "src/lib.rs"
 [dependencies]
 sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core" }
 sparrowdb-ontology-mcp = { path = "../sparrowdb-ontology-mcp" }
-sparrowdb = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
-sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb = { git = "https://github.com/ryaker/SparrowDB", rev = "d2fa6f8" }
+sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB", rev = "d2fa6f8" }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 
