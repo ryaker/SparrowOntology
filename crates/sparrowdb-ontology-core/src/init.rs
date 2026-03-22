@@ -368,6 +368,109 @@ pub fn add_alias(
     Ok(())
 }
 
+/// Add a property declaration to an existing class or relation.
+///
+/// - `owner`: canonical or alias name of the class that owns this property.
+/// - `prop_name`: the property key (must not start with `__so_`).
+/// - `datatype`: one of `string`, `int64`, `float64`, `bool`, `date`, `variant`.
+/// - `required`: whether the property must be present on create.
+///
+/// Returns `SoError::DuplicateProperty` if a property with this name is already
+/// declared on the resolved class.
+pub fn add_property(
+    db: &GraphDb,
+    owner: &str,
+    prop_name: &str,
+    datatype_str: &str,
+    required: bool,
+) -> Result<OntologyProperty, SoError> {
+    // Guard: reserved key prefix
+    if prop_name.starts_with("__so_") || prop_name.starts_with("__SO_") {
+        return Err(SoError::ReservedProperty(prop_name.to_string()));
+    }
+
+    // Resolve owner class
+    let class_sym = resolve(db, owner, AliasKind::Class)?;
+
+    // Parse datatype
+    let datatype = parse_property_type_str(datatype_str);
+
+    // Check for duplicate
+    let safe_sid = escape_cypher_string(&class_sym.symbol_id);
+    let safe_pname = escape_cypher_string(prop_name);
+    let dup_q = format!(
+        "MATCH (c:{CLASS_LABEL} {{symbol_id: '{safe_sid}'}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL} {{name: '{safe_pname}'}}) \
+         RETURN p.symbol_id"
+    );
+    let dup_result = match db.execute(&dup_q) {
+        Ok(r) => r,
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+            if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
+        {
+            sparrowdb_execution::QueryResult::empty(vec![])
+        }
+        Err(e) => return Err(SoError::Storage(e)),
+    };
+    if !dup_result.rows.is_empty() {
+        return Err(SoError::DuplicateProperty {
+            class: class_sym.canonical_name.clone(),
+            property: prop_name.to_string(),
+        });
+    }
+
+    // Seed property node
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .expect("time")
+        .as_millis() as i64;
+    let symbol_id = uuid::Uuid::new_v4().to_string();
+    let datatype_label = property_type_str(&datatype);
+
+    let mut tx = db.begin_write()?;
+    let prop_node_id = tx.merge_node(
+        PROPERTY_LABEL,
+        props(&[
+            ("symbol_id", sv(&symbol_id)),
+            ("name", sv(prop_name)),
+            ("datatype", sv(datatype_label)),
+            ("required", bv(required)),
+            ("owner_symbol_id", sv(&class_sym.symbol_id)),
+            ("owner_kind", sv("class")),
+            ("created_at", iv(now)),
+        ]),
+    )?;
+    tx.commit()?;
+
+    // Create HAS_PROPERTY edge: class → property
+    let class_node_id = get_class_node_id(db, &class_sym.canonical_name)?;
+    let mut tx2 = db.begin_write()?;
+    tx2.create_edge(class_node_id, prop_node_id, HAS_PROPERTY_REL, HashMap::new())?;
+    tx2.commit()?;
+
+    Ok(OntologyProperty {
+        symbol_id,
+        name: prop_name.to_string(),
+        datatype,
+        required,
+        default_value: None,
+        owner_symbol_id: class_sym.symbol_id,
+        owner_kind: crate::model::OwnerKind::Class,
+        created_at: now,
+        owner_name: class_sym.canonical_name,
+    })
+}
+
+fn parse_property_type_str(s: &str) -> PropertyType {
+    match s {
+        "string" => PropertyType::String,
+        "int64" => PropertyType::Int64,
+        "float64" => PropertyType::Float64,
+        "bool" => PropertyType::Bool,
+        "date" => PropertyType::Date,
+        _ => PropertyType::Variant,
+    }
+}
+
 // ── NodeId lookup helpers ─────────────────────────────────────────────────────
 
 /// Get the NodeId for a __SO_Class by canonical name.

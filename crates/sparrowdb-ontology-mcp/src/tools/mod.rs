@@ -18,6 +18,7 @@ pub fn handle_tool_call(
         | "define_class"
         | "define_relation"
         | "add_alias"
+        | "add_property"
         | "define_subclass"
         | "define_subproperty"
         | "resolve_name" => schema::dispatch(db, name, params),

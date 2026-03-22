@@ -9,7 +9,7 @@ use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
-use sparrowdb_ontology_core::{add_alias, define_subclass, resolve};
+use sparrowdb_ontology_core::{add_alias, add_property, define_subclass, resolve};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp};
@@ -81,6 +81,7 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
         "define_subclass" => tool_define_subclass(db, params),
         "define_subproperty" => define_subproperty(db, params),
         "resolve_name" => tool_resolve_name(db, params),
+        "add_property" => tool_add_property(db, params),
         _ => Err(mcp_error(-32601, "Method not found", json!({"tool": name}))),
     }
 }
@@ -698,6 +699,53 @@ pub fn tool_resolve_name(db: &GraphDb, params: Option<Value>) -> Result<Value, V
         "content": [{
             "type": "text",
             "text": serde_json::to_string(&result).unwrap_or_default()
+        }]
+    }))
+}
+
+// ── add_property ──────────────────────────────────────────────────────────────
+
+pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+    let owner = args["owner"]
+        .as_str()
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: owner", json!({})))?;
+    let name = args["name"]
+        .as_str()
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: name", json!({})))?;
+    let datatype = args["datatype"].as_str().unwrap_or("string");
+    let required = args["required"].as_bool().unwrap_or(false);
+
+    let valid_types = ["string", "int64", "float64", "bool", "date", "variant"];
+    if !valid_types.contains(&datatype) {
+        return Err(mcp_error(
+            -32602,
+            "Invalid datatype",
+            json!({
+                "error_kind": "InvalidDatatype",
+                "detail": format!("datatype '{datatype}' is not valid"),
+                "valid_options": valid_types,
+                "suggestion": "Use one of: string, int64, float64, bool, date, variant",
+            }),
+        ));
+    }
+
+    let prop = add_property(db, owner, name, datatype, required)
+        .map_err(|e| mcp_error(-32602, "add_property failed", so_error_to_mcp(&e)))?;
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(&json!({
+                "created": {
+                    "symbol_id": prop.symbol_id,
+                    "owner": prop.owner_name,
+                    "name": prop.name,
+                    "datatype": format!("{:?}", prop.datatype).to_lowercase(),
+                    "required": prop.required,
+                    "created_at": prop.created_at,
+                }
+            })).unwrap_or_default()
         }]
     }))
 }

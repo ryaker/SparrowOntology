@@ -110,6 +110,19 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
+        SoError::DuplicateProperty { class, property } => {
+            json!({
+                "error_kind": "DuplicateProperty",
+                "detail": e.to_string(),
+                "class": class,
+                "property": property,
+                "suggestion": format!(
+                    "Property '{property}' is already declared on class '{class}'. \
+                     Use get_ontology to inspect existing properties."
+                ),
+            })
+        }
+
         SoError::AlreadyInitialized => {
             json!({
                 "error_kind": "AlreadyInitialized",

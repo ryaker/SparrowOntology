@@ -49,6 +49,9 @@ pub enum SoError {
         actual: String,
     },
 
+    #[error("Property '{property}' already declared on class '{class}'")]
+    DuplicateProperty { class: String, property: String },
+
     #[error("Ontology already initialized. Use force=true to reset (destructive).")]
     AlreadyInitialized,
 

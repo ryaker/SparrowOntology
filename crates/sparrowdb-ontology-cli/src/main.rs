@@ -333,14 +333,24 @@ fn cmd_add_property(
 
     let db = open_db(db_path)?;
 
-    // There is no MCP tool for add_property yet — use the core directly.
-    // For now: call define_class to ensure class exists, then use the low-level approach.
-    // Phase 3 spec says CLI is thin wrapper; if no tool exists we do what we can.
-    // The spec references an add_property tool that isn't in Phase 2 schema tools.
-    // We'll emit an informational error if the tool isn't available.
-    let _ = (owner, prop_name, prop_type, required, default, &db);
-    eprintln!("Warning: add-property is not yet supported via the MCP tool layer in this release.");
-    eprintln!("  Owner: {owner}, Property: {prop_name}, Type: {prop_type}, Required: {required}");
+    let _ = default; // default_value not yet stored in v1 schema
+    let params = json!({
+        "owner": owner,
+        "name": prop_name,
+        "datatype": prop_type,
+        "required": required,
+    });
+    let result = handle_tool_call(&db, "add_property", Some(params))
+        .map_err(|e| render_error(&e))?;
+    let inner = extract_result(&result);
+    if let Some(created) = inner.get("created") {
+        let sym = created["symbol_id"].as_str().unwrap_or("?");
+        let dt = created["datatype"].as_str().unwrap_or(prop_type);
+        let req = created["required"].as_bool().unwrap_or(required);
+        println!("Property added: {owner}.{prop_name} ({dt}, required={req}) [{sym}]");
+    } else {
+        println!("Property added: {owner}.{prop_name}");
+    }
     Ok(())
 }
 
