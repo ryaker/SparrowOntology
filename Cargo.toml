@@ -1,5 +1,5 @@
 [workspace]
-members = ["crates/sparrowdb-ontology-core"]
+members = ["crates/sparrowdb-ontology-core", "crates/sparrowdb-ontology-mcp"]
 resolver = "2"
 
 [patch."https://github.com/ryaker/SparrowDB"]

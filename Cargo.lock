@@ -655,6 +655,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "sparrowdb-ontology-mcp"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "serde",
+ "serde_json",
+ "sparrowdb",
+ "sparrowdb-common",
+ "sparrowdb-execution",
+ "sparrowdb-ontology-core",
+ "sparrowdb-storage",
+ "tempfile",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "sparrowdb-storage"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,33 @@
+[package]
+name = "sparrowdb-ontology-mcp"
+version = "0.1.0"
+edition = "2021"
+description = "MCP server for Sparrow Ontology — ontology-aware semantic layer over SparrowDB"
+license = "MIT"
+
+[[bin]]
+name = "sparrow-ontology-mcp"
+path = "src/main.rs"
+
+[lib]
+name = "sparrowdb_ontology_mcp"
+path = "src/lib.rs"
+
+[dependencies]
+sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core" }
+sparrowdb = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb-execution = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+sparrowdb-storage = { git = "https://github.com/ryaker/SparrowDB", branch = "main" }
+uuid = { version = "1", features = ["v4"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "1"
+clap = { version = "4", features = ["derive"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[[test]]
+name = "test_mcp_phase2"
+path = "../../tests/integration/test_mcp_phase2.rs"
