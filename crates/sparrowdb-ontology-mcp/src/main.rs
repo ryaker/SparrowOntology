@@ -1,13 +1,20 @@
 use sparrowdb_ontology_mcp::error;
 use sparrowdb_ontology_mcp::tools;
 
-use clap::Parser;
+use clap::{Parser, ValueEnum};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::io::{self, BufRead, Write};
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
 // ── CLI args ──────────────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, ValueEnum)]
+enum Transport {
+    Stdio,
+    Http,
+}
 
 #[derive(Parser, Debug)]
 #[command(name = "sparrow-ontology-mcp")]
@@ -17,6 +24,14 @@ struct Args {
     /// Path to the SparrowDB database directory
     #[arg(long)]
     db: PathBuf,
+
+    /// Transport mode: stdio (default, for Claude Desktop/Code) or http
+    #[arg(long, default_value = "stdio")]
+    transport: Transport,
+
+    /// Port to listen on when --transport http is selected
+    #[arg(long, default_value = "3456")]
+    port: u16,
 }
 
 // ── JSON-RPC types ────────────────────────────────────────────────────────────
@@ -41,7 +56,8 @@ struct JsonRpcResponse {
 
 // ── Entry point ───────────────────────────────────────────────────────────────
 
-fn main() {
+#[tokio::main]
+async fn main() {
     let args = Args::parse();
 
     let db = match sparrowdb::GraphDb::open(&args.db) {
@@ -52,6 +68,15 @@ fn main() {
         }
     };
 
+    match args.transport {
+        Transport::Stdio => run_stdio(db),
+        Transport::Http => run_http(db, args.port).await,
+    }
+}
+
+// ── stdio transport ───────────────────────────────────────────────────────────
+
+fn run_stdio(db: sparrowdb::GraphDb) {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let mut out = stdout.lock();
@@ -85,6 +110,91 @@ fn main() {
         if out.flush().is_err() {
             break;
         }
+    }
+}
+
+// ── HTTP transport ────────────────────────────────────────────────────────────
+
+type SharedDb = Arc<Mutex<sparrowdb::GraphDb>>;
+
+async fn run_http(db: sparrowdb::GraphDb, port: u16) {
+    use axum::{
+        extract::State,
+        http::StatusCode,
+        response::{IntoResponse, Response},
+        routing::{get, post},
+        Router,
+    };
+
+    let shared = Arc::new(Mutex::new(db));
+
+    async fn health() -> impl IntoResponse {
+        axum::Json(json!({"status": "ok", "service": "sparrow-ontology-mcp"}))
+    }
+
+    async fn mcp_endpoint(
+        State(db): State<SharedDb>,
+        body: String,
+    ) -> Response {
+        let req = match serde_json::from_str::<JsonRpcRequest>(&body) {
+            Ok(r) => r,
+            Err(e) => {
+                let resp = JsonRpcResponse {
+                    jsonrpc: "2.0".into(),
+                    id: None,
+                    result: None,
+                    error: Some(json!({"code": -32700, "message": e.to_string()})),
+                };
+                return (
+                    StatusCode::OK,
+                    axum::Json(serde_json::to_value(resp).unwrap()),
+                )
+                    .into_response();
+            }
+        };
+
+        let resp = {
+            let guard = match db.lock() {
+                Ok(g) => g,
+                Err(_) => {
+                    let resp = JsonRpcResponse {
+                        jsonrpc: "2.0".into(),
+                        id: req.id,
+                        result: None,
+                        error: Some(json!({"code": -32603, "message": "Internal error: db lock poisoned"})),
+                    };
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        axum::Json(serde_json::to_value(resp).unwrap()),
+                    )
+                        .into_response();
+                }
+            };
+            handle_request(&guard, req)
+        };
+
+        (StatusCode::OK, axum::Json(serde_json::to_value(resp).unwrap())).into_response()
+    }
+
+    let app = Router::new()
+        .route("/health", get(health))
+        .route("/mcp", post(mcp_endpoint))
+        .with_state(shared);
+
+    let addr = format!("0.0.0.0:{port}");
+    let listener = match tokio::net::TcpListener::bind(&addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("Failed to bind to {addr}: {e}");
+            std::process::exit(1);
+        }
+    };
+    eprintln!("sparrow-ontology-mcp listening on http://{addr}");
+    eprintln!("  POST /mcp   — JSON-RPC endpoint");
+    eprintln!("  GET  /health — health check");
+    if let Err(e) = axum::serve(listener, app).await {
+        eprintln!("Server error: {e}");
+        std::process::exit(1);
     }
 }
 
