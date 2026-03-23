@@ -64,6 +64,8 @@ impl<'a> ValidationContext<'a> {
                     name: key.clone(),
                     kind: "property".to_string(),
                     valid: declared.iter().map(|p| p.name.clone()).collect(),
+                    closest_match: None,
+                    suggestion: None,
                 })?;
             self.check_type_match(&class.canonical_name, prop, value)?;
         }

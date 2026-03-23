@@ -12,6 +12,8 @@ pub enum SoError {
         name: String,
         kind: String,
         valid: Vec<String>,
+        closest_match: Option<String>,
+        suggestion: Option<String>,
     },
 
     #[error("Alias '{alias}' already registered for '{existing}' ({kind})")]

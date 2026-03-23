@@ -10,8 +10,10 @@ use sparrowdb_ontology_core::SoError;
 /// - `suggestion`: actionable hint (present for UnknownSymbol, DomainViolation, RangeViolation)
 pub fn so_error_to_mcp(e: &SoError) -> Value {
     match e {
-        SoError::UnknownSymbol { name, kind, valid } => {
-            let suggestion = if valid.is_empty() {
+        SoError::UnknownSymbol { name, kind, valid, closest_match, suggestion: fuzzy_suggestion } => {
+            let suggestion = if let Some(s) = fuzzy_suggestion {
+                s.clone()
+            } else if valid.is_empty() {
                 format!("No {kind} symbols have been defined yet. Use define_class or define_relation first.")
             } else {
                 format!(
@@ -19,12 +21,16 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
                     valid.join(", ")
                 )
             };
-            json!({
+            let mut obj = json!({
                 "error_kind": "UnknownSymbol",
                 "detail": e.to_string(),
                 "valid_options": valid,
                 "suggestion": suggestion,
-            })
+            });
+            if let Some(m) = closest_match {
+                obj["closest_match"] = json!(m);
+            }
+            obj
         }
 
         SoError::AliasConflict { alias, existing, kind } => {
@@ -159,4 +165,17 @@ pub fn mcp_error(code: i64, message: &str, data: Value) -> Value {
         "message": message,
         "data": data,
     })
+}
+
+/// Build an MCP error JSON-RPC object from a `SoError`, surfacing the fuzzy
+/// suggestion prominently in the `message` field when available.
+pub fn so_error_to_mcp_error(code: i64, context: &str, e: &SoError) -> Value {
+    let data = so_error_to_mcp(e);
+    let message = match e {
+        SoError::UnknownSymbol { name: _, kind: _, valid: _, closest_match: Some(_), suggestion: Some(s) } => {
+            format!("{context}: {s}")
+        }
+        _ => context.to_string(),
+    };
+    mcp_error(code, &message, data)
 }

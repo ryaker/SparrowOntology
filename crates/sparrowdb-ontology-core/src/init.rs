@@ -110,11 +110,15 @@ pub fn init(
             name: r.domain.clone(),
             kind: "class".to_string(),
             valid: class_ids.keys().cloned().collect(),
+            closest_match: None,
+            suggestion: None,
         })?;
         let range_id = *class_ids.get(&r.range).ok_or_else(|| SoError::UnknownSymbol {
             name: r.range.clone(),
             kind: "class".to_string(),
             valid: class_ids.keys().cloned().collect(),
+            closest_match: None,
+            suggestion: None,
         })?;
 
         let mut tx = db.begin_write()?;
@@ -137,6 +141,8 @@ pub fn init(
                 name: p.owner_name.clone(),
                 kind: "class".to_string(),
                 valid: classes.iter().map(|c| c.name.clone()).collect(),
+                closest_match: None,
+                suggestion: None,
             }
         })?;
         let class_id = class_ids[&owner_class.name];
@@ -231,6 +237,8 @@ fn seed_property_node(
             name: p.owner_name.clone(),
             kind: "class".to_string(),
             valid: classes.iter().map(|c| c.name.clone()).collect(),
+            closest_match: None,
+            suggestion: None,
         })?;
 
     let datatype_str = property_type_str(&p.datatype);
@@ -498,6 +506,8 @@ fn get_node_id_by_name(db: &GraphDb, label: &str, name: &str) -> Result<NodeId, 
             name: name.to_string(),
             kind: label.to_string(),
             valid: vec![],
+            closest_match: None,
+            suggestion: None,
         })
 }
 

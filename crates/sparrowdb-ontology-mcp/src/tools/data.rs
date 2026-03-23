@@ -14,7 +14,7 @@ use sparrowdb_common::NodeId;
 use sparrowdb_ontology_core::{resolve, ValidationContext};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
-use crate::error::{mcp_error, so_error_to_mcp};
+use crate::error::{mcp_error, so_error_to_mcp, so_error_to_mcp_error};
 
 // ── Cypher string escaping ────────────────────────────────────────────────────
 
@@ -175,7 +175,7 @@ pub fn create_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
 
     // Step 1: resolve label
     let resolved = resolve(db, label, AliasKind::Class)
-        .map_err(|e| mcp_error(-32602, "Label resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Label resolution failed", &e))?;
 
     // Step 2: build property map from JSON
     let mut props: HashMap<String, PropertyValue> = HashMap::new();
@@ -264,9 +264,9 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
 
     // Step 3: resolve labels
     let source_resolved = resolve(db, &source_label, AliasKind::Class)
-        .map_err(|e| mcp_error(-32602, "Source label resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Source label resolution failed", &e))?;
     let target_resolved = resolve(db, &target_label, AliasKind::Class)
-        .map_err(|e| mcp_error(-32602, "Target label resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Target label resolution failed", &e))?;
 
     // Step 4: validate relationship
     let rel_resolved = ValidationContext::new(db)
@@ -332,7 +332,7 @@ pub fn update_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
 
     // Step 2: resolve label
     let resolved = resolve(db, &label, AliasKind::Class)
-        .map_err(|e| mcp_error(-32602, "Label resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Label resolution failed", &e))?;
 
     // Step 3: build property map
     let mut props: HashMap<String, PropertyValue> = HashMap::new();
@@ -414,7 +414,7 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
 
     // Step 1: resolve label
     let resolved = resolve(db, label, AliasKind::Class)
-        .map_err(|e| mcp_error(-32602, "Label resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Label resolution failed", &e))?;
     let canonical = resolved.canonical_name.clone();
 
     // Step 2: optionally expand subclasses
@@ -557,7 +557,7 @@ pub fn explain_symbol(db: &GraphDb, params: Option<Value>) -> Result<Value, Valu
 fn explain_class(db: &GraphDb, name: &str) -> Result<Value, Value> {
     // Step 1: resolve
     let resolved = resolve(db, name, AliasKind::Class)
-        .map_err(|e| mcp_error(-32602, "Resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Resolution failed", &e))?;
     let canonical = &resolved.canonical_name;
     let safe_c = escape_cypher_string(canonical);
 
@@ -672,7 +672,7 @@ fn explain_class(db: &GraphDb, name: &str) -> Result<Value, Value> {
 fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
     // Step 1: resolve
     let resolved = resolve(db, name, AliasKind::Relation)
-        .map_err(|e| mcp_error(-32602, "Resolution failed", so_error_to_mcp(&e)))?;
+        .map_err(|e| so_error_to_mcp_error(-32602, "Resolution failed", &e))?;
     let canonical = &resolved.canonical_name;
     let safe_r = escape_cypher_string(canonical);
 
