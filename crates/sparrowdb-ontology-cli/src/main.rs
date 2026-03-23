@@ -1,10 +1,11 @@
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::process;
 
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{init, StarterKind};
+use sparrowdb_ontology_core::{import_records, init, ImportTemplate, StarterKind};
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
@@ -151,6 +152,23 @@ enum Commands {
         #[arg(long)]
         db: PathBuf,
     },
+    /// Import entities from a CSV or JSON file using a mapping template
+    Import {
+        #[arg(long)]
+        db: PathBuf,
+        /// Path to the data file (.csv or .json)
+        #[arg(long)]
+        file: PathBuf,
+        /// Path to the JSON mapping template
+        #[arg(long)]
+        template: PathBuf,
+        /// Validate all rows and print what would be created, but don't write
+        #[arg(long)]
+        dry_run: bool,
+        /// Continue on row-level validation errors (log them), don't abort
+        #[arg(long)]
+        skip_errors: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -189,6 +207,9 @@ fn run(cli: Cli) -> Result<(), String> {
         }
         Commands::Explain { name, db, kind } => cmd_explain(&db, &name, &kind),
         Commands::Stats { db } => cmd_stats(&db),
+        Commands::Import { db, file, template, dry_run, skip_errors } => {
+            cmd_import(&db, &file, &template, dry_run, skip_errors)
+        }
     }
 }
 
@@ -487,6 +508,107 @@ fn cmd_explain(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> 
     let inner = extract_result(&result);
 
     println!("{}", serde_json::to_string_pretty(&inner).unwrap_or_default());
+    Ok(())
+}
+
+fn cmd_import(
+    db_path: &PathBuf,
+    file_path: &PathBuf,
+    template_path: &PathBuf,
+    dry_run: bool,
+    skip_errors: bool,
+) -> Result<(), String> {
+    // Load and parse the JSON template.
+    let template_bytes = std::fs::read(template_path)
+        .map_err(|e| format!("Error: cannot read template file {}: {e}", template_path.display()))?;
+    let template: ImportTemplate = serde_json::from_slice(&template_bytes)
+        .map_err(|e| format!("Error: invalid template JSON: {e}"))?;
+
+    // Detect file format by extension.
+    let ext = file_path
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+
+    let records: Vec<HashMap<String, String>> = match ext.as_str() {
+        "csv" => {
+            let file = std::fs::File::open(file_path)
+                .map_err(|e| format!("Error: cannot open file {}: {e}", file_path.display()))?;
+            let mut rdr = csv::Reader::from_reader(file);
+            let headers: Vec<String> = rdr
+                .headers()
+                .map_err(|e| format!("Error: cannot read CSV headers: {e}"))?
+                .iter()
+                .map(|s| s.to_string())
+                .collect();
+            let mut rows = Vec::new();
+            for (i, result) in rdr.records().enumerate() {
+                let row = result
+                    .map_err(|e| format!("Error: CSV parse error at row {}: {e}", i + 2))?;
+                let map: HashMap<String, String> = headers
+                    .iter()
+                    .zip(row.iter())
+                    .map(|(h, v)| (h.clone(), v.to_string()))
+                    .collect();
+                rows.push(map);
+            }
+            rows
+        }
+        "json" => {
+            let bytes = std::fs::read(file_path)
+                .map_err(|e| format!("Error: cannot read file {}: {e}", file_path.display()))?;
+            let arr: Vec<Value> = serde_json::from_slice(&bytes)
+                .map_err(|e| format!("Error: invalid JSON array in file: {e}"))?;
+            arr.into_iter()
+                .map(|obj| {
+                    obj.as_object()
+                        .ok_or_else(|| "Error: JSON array must contain objects".to_string())
+                        .map(|m| {
+                            m.iter()
+                                .map(|(k, v)| {
+                                    let s = match v {
+                                        Value::String(s) => s.clone(),
+                                        other => other.to_string(),
+                                    };
+                                    (k.clone(), s)
+                                })
+                                .collect::<HashMap<String, String>>()
+                        })
+                })
+                .collect::<Result<Vec<_>, _>>()?
+        }
+        other => {
+            return Err(format!(
+                "Error: unsupported file extension '.{other}' — use .csv or .json"
+            ));
+        }
+    };
+
+    let total = records.len();
+
+    if dry_run {
+        println!("[dry-run] Validating {total} records against class '{}'...", template.class);
+    }
+
+    let db = open_db(db_path)?;
+    let result = import_records(&db, &records, &template, dry_run, skip_errors)
+        .map_err(|e| format!("Error: {e}"))?;
+
+    // Print per-row errors.
+    for err in &result.errors {
+        eprintln!("  Row {}: {}", err.row, err.message);
+    }
+
+    // Summary line.
+    let action = if dry_run { "Would import" } else { "Imported" };
+    println!(
+        "{action} {} entities ({} skipped, {} errors)",
+        result.created,
+        result.skipped,
+        result.error_count()
+    );
+
     Ok(())
 }
 
