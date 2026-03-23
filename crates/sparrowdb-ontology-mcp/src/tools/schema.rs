@@ -118,7 +118,7 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
     };
 
     if initialized {
-        // Fetch relation count too
+        // Relation count
         let rel_count = {
             let q2 = format!("MATCH (n:{RELATION_LABEL}) RETURN count(n)");
             match execute_or_empty(db, &q2) {
@@ -135,6 +135,64 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
             }
         };
 
+        // Total declared property count
+        let property_count = {
+            let q3 = format!("MATCH (p:{PROPERTY_LABEL}) RETURN count(p)");
+            match execute_or_empty(db, &q3) {
+                Ok(r) => r
+                    .rows
+                    .first()
+                    .and_then(|row| row.first())
+                    .map(|v| match v {
+                        ExecValue::Int64(n) => *n,
+                        _ => 0,
+                    })
+                    .unwrap_or(0),
+                Err(_) => 0,
+            }
+        };
+
+        // All class names
+        let all_class_names: Vec<String> = {
+            let q4 = format!("MATCH (c:{CLASS_LABEL}) RETURN c.name");
+            match execute_or_empty(db, &q4) {
+                Ok(r) => r.rows.iter().map(|row| str_val(row, 0)).collect(),
+                Err(_) => vec![],
+            }
+        };
+
+        // Class names that have at least one declared property
+        let seeded_names: std::collections::HashSet<String> = {
+            let q5 = format!(
+                "MATCH (c:{CLASS_LABEL})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) RETURN c.name"
+            );
+            match execute_or_empty(db, &q5) {
+                Ok(r) => r
+                    .rows
+                    .iter()
+                    .map(|row| str_val(row, 0))
+                    .collect(),
+                Err(_) => std::collections::HashSet::new(),
+            }
+        };
+
+        // Classes with 0 declared properties — sorted for stable output
+        let mut unseeded_classes: Vec<String> = all_class_names
+            .into_iter()
+            .filter(|name| !seeded_names.contains(name))
+            .collect();
+        unseeded_classes.sort();
+
+        let schema_seeding = if unseeded_classes.is_empty() {
+            json!({ "status": "complete", "unseeded_classes": [] })
+        } else {
+            json!({
+                "status": "incomplete",
+                "unseeded_classes": unseeded_classes,
+                "warning": "create_entity will reject any properties on these classes until add_property is called. Call create_entity with an empty properties object {} to create bare nodes without properties."
+            })
+        };
+
         Ok(json!({
             "content": [{
                 "type": "text",
@@ -143,13 +201,16 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
                     "ontology": {
                         "class_count": class_count,
                         "relation_count": rel_count,
+                        "property_count": property_count,
                     },
+                    "schema_seeding": schema_seeding,
+                    "schema_first_rule": "Properties must be declared via add_property before create_entity can store them. Params: owner (class name), name (property name), datatype (default: 'string'), required (default: false).",
                     "next_steps": [
-                        "Call get_ontology to view all defined classes and relations.",
+                        "Call get_ontology to view all defined classes, relations, and their declared properties.",
+                        "To use create_entity with properties: first call add_property(owner='ClassName', name='fieldName') for each field, then call create_entity.",
                         "Call define_class to add a new class.",
                         "Call define_relation to add a new relation.",
-                        "Call create_entity to create a typed entity node.",
-                        "Call create_relationship to create a typed edge between entities.",
+                        "Call create_relationship to create a typed edge between two entity node IDs.",
                     ]
                 })).unwrap_or_default()
             }]
@@ -165,6 +226,7 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
                         "Call the init tool to bootstrap the ontology with the canonical world model (Person, Organization, Project, Task, …) or start blank.",
                         "After init, call get_ontology to inspect the schema.",
                         "Then call define_class / define_relation to extend the schema.",
+                        "Before calling create_entity with properties, declare each field via add_property(owner='ClassName', name='fieldName').",
                     ]
                 })).unwrap_or_default()
             }]

@@ -265,7 +265,7 @@ fn tool_list() -> Value {
         "tools": [
             {
                 "name": "start_here",
-                "description": "Check initialization state of the ontology and get orientation on next steps.",
+                "description": "Check initialization state of the ontology. Returns class/relation/property counts, lists classes with no declared properties (unseeded), and explains the schema-first workflow. Call this first in every session.",
                 "inputSchema": {
                     "type": "object",
                     "properties": {},

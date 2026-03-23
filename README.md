@@ -1,101 +1,92 @@
 # Sparrow Ontology
 
-> A semantic layer for SparrowDB: typed entities, alias resolution, domain/range validation, and a pre-seeded world model — exposed as an MCP server any LLM client can use today.
+**Schema-enforced graph memory for AI agents.**
 
 [![CI](https://github.com/ryaker/SparrowOntology/actions/workflows/ci.yml/badge.svg)](https://github.com/ryaker/SparrowOntology/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
 
-## What It Is
+Language models are great at writing data into graphs. They're terrible at doing it consistently.
 
-SparrowDB stores graphs. Sparrow Ontology gives those graphs a schema.
+Without a schema, every session your agent decides `Person` is spelled differently, stores email under `email` or `e_mail` or `contact`, and links nodes with whatever relationship name felt right in the moment. You end up with a graph that's full of data and useless for retrieval.
 
-Without an ontology, any label and any property can go anywhere. That's fine for exploration. It's a problem when a language model is writing nodes, or when you need to merge data from multiple sources and actually trust what you get back.
-
-Sparrow Ontology sits between your application (or an MCP client) and SparrowDB. It enforces a type system: every entity has a class, every relationship has domain and range constraints, every write goes through validation before it touches the graph. Aliases let you write `"person"` and get `Person`. Subclass hierarchies let you query `Agent` and get back both `Person` and `Organization`.
-
-The built-in world model seeds 10 classes, 19 relation types, and 22 properties on init. You can extend it or replace it entirely.
-
-**First production target:** the KMS adapter (SPA-108) — replacing the Neo4j Aura ontology layer with a local, zero-latency, zero-subscription equivalent.
+Sparrow Ontology fixes that. It's a typed semantic layer for [SparrowDB](https://github.com/ryaker/SparrowDB) — a pure-Rust embedded graph database. Every write is validated against a schema before it touches the graph. Aliases collapse spelling variants. Domain/range constraints catch broken relationships at write time, not query time. And the whole thing speaks [MCP](https://modelcontextprotocol.io/), so any LLM client can use it today without writing a single line of integration code.
 
 ---
 
-## Status — All Phases Complete
+## What it looks like from Claude (or any MCP client)
 
-| Phase | Crate / Feature | Status |
-|-------|----------------|--------|
-| 1 | `sparrowdb-ontology-core` — init, schema ops, entity/relation CRUD, validation, alias resolution, subclass hierarchy | ✅ Complete |
-| 2 | `sparrowdb-ontology-mcp` — 15 MCP tools, stdio + HTTP transport, E2E tested via Claude Desktop | ✅ Complete |
-| 3 | `sparrowdb-ontology-cli` — `sparrow-ontology` binary, all schema/entity/import subcommands | ✅ Complete |
-| 4 | CI/CD, GitHub Releases, cross-platform binaries, MCP config docs | ✅ Complete |
+```
+call start_here
+→ { status: "initialized", class_count: 10, property_count: 22,
+    unseeded_classes: ["Event", "Location", ...],
+    schema_first_rule: "Declare properties via add_property before create_entity can store them." }
 
-**86 tests, all green.** Integration tests cover the full path from MCP JSON-RPC call through SparrowDB and back — not just unit logic.
+call create_entity("Person", { name: "Alice", email: "alice@example.com" })
+→ { node_id: "4294967296", canonical_label: "Person", created: true }
 
-Recent additions:
-- `add_property` — declare typed, required properties on classes (SPA-229)
-- `import_records` — template-driven bulk entity import with per-row error reporting (SPA-230)
-- HTTP transport — `--transport http --port 3456` for remote access and Cloudflare tunnel (SPA-231)
-- E2E test suite against live MCP server via Claude Desktop (SPA-228)
+call create_entity("Person", { name: "Alice", typo_field: "oops" })
+→ Error: Unknown property 'typo_field'. Valid: ["name", "email", "phone", "location"]
+```
+
+The schema enforces itself. The agent can't write garbage — it gets told exactly what's valid and what isn't.
 
 ---
 
-## MCP Server — Connect in 2 minutes
+## 2-minute setup (MCP)
 
-`sparrow-ontology-mcp` speaks JSON-RPC 2.0. Drop it into Claude Desktop, Claude Code, or any MCP client.
-
-**stdio** (Claude Desktop / Claude Code):
+**stdio** — drop into Claude Desktop or Claude Code:
 
 ```bash
-# Download from GitHub Releases, or build from source:
 cargo build --release -p sparrowdb-ontology-mcp
-
-# Add to Claude Desktop config at ~/Library/Application Support/Claude/claude_desktop_config.json:
 ```
 
 ```json
 {
   "mcpServers": {
     "sparrow-ontology": {
-      "command": "/usr/local/bin/sparrow-ontology-mcp",
+      "command": "/path/to/sparrow-ontology-mcp",
       "args": ["--db", "/path/to/your.db"]
     }
   }
 }
 ```
 
-**HTTP** (remote access, Cloudflare tunnel, iOS):
+**HTTP** — remote access, Cloudflare tunnel, iOS:
 
 ```bash
 sparrow-ontology-mcp --db my.db --transport http --port 3456
-# → sparrow-ontology-mcp listening on http://0.0.0.0:3456
+# sparrow-ontology-mcp listening on http://0.0.0.0:3456
 #   POST /mcp   — JSON-RPC endpoint
 #   GET  /health — health check
 ```
 
-### Tools
+---
+
+## MCP Tools
 
 | Tool | What it does |
 |------|-------------|
-| `start_here` | Check init state, get orientation on next steps |
-| `get_ontology` | Full schema: classes, relations, aliases, properties |
+| `start_here` | Init check, property seeding status, schema-first orientation |
+| `get_ontology` | Full schema: classes, relations, aliases, declared properties |
 | `define_class` | Add a new entity type |
 | `define_relation` | Add a relation with domain + range constraints |
-| `define_subclass` | Create subclass hierarchy (cycle-safe) |
-| `define_subproperty` | Create sub-relation hierarchy (cycle-safe) |
-| `add_alias` | Register a spelling alias for a class or relation |
-| `add_property` | Declare a typed property on a class (required or optional) |
-| `resolve_name` | Resolve an alias to its canonical form |
+| `define_subclass` | Subclass hierarchy — cycle-safe |
+| `define_subproperty` | Sub-relation hierarchy — cycle-safe |
+| `add_alias` | Register spelling aliases (`"person"` → `Person`, `"org"` → `Organization`) |
+| `add_property` | Declare typed, required/optional properties on a class |
+| `resolve_name` | Resolve alias to canonical symbol |
 | `create_entity` | Write a validated entity node |
 | `update_entity` | Update properties on an existing entity |
 | `find_entities` | Query by class + optional property filters |
 | `create_relationship` | Write a validated, domain/range-checked relationship |
 | `explain_symbol` | Full detail on a class or relation: properties, aliases, hierarchy |
-| `validate` | Check an entity payload against the schema before writing |
+| `validate` | Dry-run validation before writing |
 
 ---
 
-## Core Library
+## Core library (Rust)
 
 ```toml
 [dependencies]
@@ -108,38 +99,46 @@ use sparrowdb::GraphDb;
 use sparrowdb_ontology_core::{init, create_entity, create_relationship, find_entities};
 
 let db = GraphDb::open("my.db")?;
-init(&db)?; // seeds world model: 10 classes, 19 relations, 22 properties
+init(&db)?;  // seeds 10 classes, 19 relations, 22 properties
 
-// Create typed entities — validation runs before the write
+// Validated writes — schema checked before any data hits the graph
 let alice = create_entity(&db, "Person", &[("name", "Alice"), ("email", "alice@example.com")])?;
 let acme  = create_entity(&db, "Organization", &[("name", "Acme Corp")])?;
 
-// Alias resolution: "person" → Person, "org" → Organization
-let bob = create_entity(&db, "person", &[("name", "Bob")])?;
+// Alias resolution built in — agents can write loosely, storage stays clean
+let bob = create_entity(&db, "person", &[("name", "Bob")])?;   // "person" → Person ✓
 
-// Domain/range validated relationship
+// Domain/range enforcement on relationships
 create_relationship(&db, &alice.id, "WORKS_FOR", &acme.id, &[])?;
+create_relationship(&db, &acme.id, "WORKS_FOR", &alice.id, &[])?;
+// ↑ Error: DomainViolation { relation: "WORKS_FOR", expected: ["Person"], got: "Organization" }
 
-// Subclass expansion: "Agent" returns Person + Organization nodes
+// Subclass expansion — query "Agent", get Person + Organization nodes
 let agents = find_entities(&db, "Agent", None, None)?;
 ```
 
-Error messages tell you what went wrong and what's valid:
+Error messages are actionable, not cryptic:
 
 ```
+SoError::UnknownClass {
+    name: "Preson",
+    suggestion: Some("Did you mean: Person?"),
+}
+
 SoError::DomainViolation {
     relation: "WORKS_FOR",
     expected: ["Person"],
     got: "Document",
 }
 
-SoError::UnknownClass {
-    name: "Preson",
-    suggestion: Some("Did you mean: Person?"),
+SoError::UnknownSymbol {
+    name: "typo_field",
+    kind: "property",
+    valid: ["name", "email", "phone"],
 }
 ```
 
-### Bulk Import
+### Bulk import with field mapping
 
 ```rust
 use sparrowdb_ontology_core::{import_records, ImportTemplate};
@@ -147,104 +146,134 @@ use sparrowdb_ontology_core::{import_records, ImportTemplate};
 let template = ImportTemplate {
     class_name: "Person".into(),
     property_map: vec![
-        ("full_name".into(), "name".into()),
+        ("full_name".into(), "name".into()),    // source field → ontology field
         ("work_email".into(), "email".into()),
     ],
 };
 
 let result = import_records(&db, &template, records)?;
-// result.imported == N, result.errors contains per-row failures
+// result.imported == N, result.errors has per-row detail for anything that didn't pass validation
 ```
 
 ---
 
-## World Model
+## Pre-seeded world model
 
-`init()` seeds the following. All labels use the reserved `__SO_` prefix in SparrowDB; your application always sees plain names.
+`init()` gives you a usable starting schema in one call. Extend it or replace it entirely.
 
-**Classes (10):** Person, Organization, Project, Document, Event, Location, Concept, Asset, Role, Claim
+**Classes (10):** `Person`, `Organization`, `Project`, `Document`, `Event`, `Location`, `Concept`, `Asset`, `Role`, `Claim`
 
 **Relations (19):**
 
-| Relation | Domain | Range |
-|----------|--------|-------|
-| KNOWS | Person | Person |
-| WORKS_FOR | Person | Organization |
-| MEMBER_OF | Person | Organization |
-| LEADS | Person | Project |
-| LOCATED_IN | * | Location |
-| PARTICIPATED_IN | Person | Event |
-| AUTHORED | Person | Document |
-| RELATED_TO | * | * |
-| OWNS | Person | Asset |
-| DEPENDS_ON | Project | Project |
-| CITES | Document | Document |
-| TAGGED_WITH | * | Concept |
-| HAS_ROLE | Person | Role |
-| PRODUCED | Organization | Asset |
-| OCCURRED_AT | Event | Location |
-| PART_OF | * | * |
-| DERIVED_FROM | * | * |
-| SUPPORTS | Claim | Claim |
-| CONTRADICTS | Claim | Claim |
+| Relation | Domain → Range |
+|----------|----------------|
+| `KNOWS` | Person → Person |
+| `WORKS_FOR` | Person → Organization |
+| `MEMBER_OF` | Person → Organization |
+| `LEADS` | Person → Project |
+| `LOCATED_IN` | * → Location |
+| `PARTICIPATED_IN` | Person → Event |
+| `AUTHORED` | Person → Document |
+| `OWNS` | Person → Asset |
+| `DEPENDS_ON` | Project → Project |
+| `CITES` | Document → Document |
+| `TAGGED_WITH` | * → Concept |
+| `HAS_ROLE` | Person → Role |
+| `PRODUCED` | Organization → Asset |
+| `OCCURRED_AT` | Event → Location |
+| `SUPPORTS` | Claim → Claim |
+| `CONTRADICTS` | Claim → Claim |
+| `RELATED_TO` | * → * |
+| `PART_OF` | * → * |
+| `DERIVED_FROM` | * → * |
 
-**Properties (22):** name, description, created_at, updated_at, source, confidence, url, email, phone, start_date, end_date, and 11 others.
+**Properties (22):** `name`, `description`, `email`, `phone`, `url`, `source`, `confidence`, `start_date`, `end_date`, `created_at`, `updated_at`, and 11 others.
 
-Start with an empty schema instead: `--blank` (CLI) or call `init_blank(&db)`.
-
----
-
-## Crate Layout
-
-```
-SparrowOntology/
-├── crates/
-│   ├── sparrowdb-ontology-core/   # Library: init, schema, CRUD, validation, import
-│   │   └── src/
-│   │       ├── init.rs            # World model seeding, add_property
-│   │       ├── model.rs           # Class, Relation, Property types
-│   │       ├── validation.rs      # Entity + relationship validation
-│   │       ├── resolution.rs      # Alias resolution
-│   │       ├── hierarchy.rs       # Subclass/subproperty traversal
-│   │       ├── import.rs          # Template-driven bulk import
-│   │       └── namespace.rs       # __SO_ prefix management
-│   ├── sparrowdb-ontology-mcp/    # MCP server binary, 15 tools, stdio + HTTP
-│   └── sparrowdb-ontology-cli/    # sparrow-ontology binary
-└── tests/integration/             # Integration tests (full roundtrip, not mocks)
-```
+Start blank instead: `--blank` (CLI) or `init_blank(&db)`.
 
 ---
 
-## Build and Test
+## Status
+
+All phases complete. 86 tests, all green. Integration tests run against a real SparrowDB instance — no mocks.
+
+| Phase | What shipped |
+|-------|-------------|
+| 1 — Core | `sparrowdb-ontology-core`: init, schema ops, entity/relation CRUD, validation, alias resolution, subclass hierarchy |
+| 2 — MCP | `sparrowdb-ontology-mcp`: 15 tools, stdio + HTTP transport, E2E tested |
+| 3 — CLI | `sparrowdb-ontology-cli`: full `sparrow-ontology` binary with schema/entity/import subcommands |
+| 4 — CI/CD | GitHub Actions, release builds, cross-platform binaries |
+
+---
+
+## Why local + embedded
+
+Neo4j Aura costs $65/month minimum. Requires an internet connection. Has a 200MB free tier you'll blow through. Needs a separate process.
+
+SparrowDB is a single Rust library. Sparrow Ontology is a layer on top of it. The whole stack runs in-process, on your laptop, on a Raspberry Pi, behind a Cloudflare tunnel, offline. No subscription. No cloud dependency. No latency you don't control.
+
+For AI agents writing and reading structured knowledge — especially at inference time — that matters.
+
+---
+
+## Architecture
+
+```
+MCP client (Claude Desktop / Claude Code / claude.ai)
+        │  JSON-RPC 2.0 (stdio or HTTP)
+        ▼
+sparrow-ontology-mcp
+        │  validates schema, resolves aliases, enforces domain/range
+        ▼
+sparrowdb-ontology-core
+        │  reads/writes Cypher queries
+        ▼
+SparrowDB  (embedded Rust graph engine, zero external deps)
+        │  persists to
+        ▼
+  your.db  (single file)
+```
+
+---
+
+## Build
 
 ```bash
 git clone https://github.com/ryaker/SparrowOntology
 cd SparrowOntology
 cargo build --workspace
-cargo test --workspace   # 86 tests, all green
+cargo test --workspace
 ```
 
-Requires Rust 1.75+ and a local SparrowDB (see `Cargo.toml` path patch).
+Requires Rust 1.75+. SparrowDB is pulled as a git dependency.
 
-### Testing philosophy
+---
 
-All integration tests run against a real SparrowDB instance — no mocks. Unit tests prove compartmentalized logic. Integration tests prove the system. Both matter; only one is sufficient to ship.
+## Crate layout
+
+```
+crates/
+├── sparrowdb-ontology-core/    # Library: schema, validation, CRUD, import
+├── sparrowdb-ontology-mcp/     # MCP server binary (stdio + HTTP)
+└── sparrowdb-ontology-cli/     # sparrow-ontology CLI binary
+tests/integration/              # Full roundtrip tests — no mocks
+```
 
 ---
 
 ## Roadmap
 
-- **SPA-108** — KMS adapter: swap Neo4j Aura for Sparrow Ontology (zero-subscription, local-first)
-- **SPA-226** — crates.io publish (blocked on SparrowDB upstream SPA-210)
-- **Property inheritance in validation** — subclass entities validated against parent-class required properties
+- **KMS cutover** — replace the Neo4j Aura ontology layer in production with this stack
+- **crates.io publish** — blocked on SparrowDB upstream stabilization
+- **Property inheritance** — subclass entities validated against parent-class required properties
+- **SPARQL-style query surface** — pattern matching across the ontology without raw Cypher
 
 ---
 
-## Spec and Tracking
+## Tracking
 
-Linear project: [Sparrow Ontology](https://linear.app/sparrowdb/project/sparrow-ontology-d0dd0956d1f0)
-
-SparrowDB (the graph engine underneath): [github.com/ryaker/SparrowDB](https://github.com/ryaker/SparrowDB)
+Linear: [Sparrow Ontology project](https://linear.app/sparrowdb/project/sparrow-ontology-d0dd0956d1f0)
+Graph engine: [SparrowDB](https://github.com/ryaker/SparrowDB)
 
 ---
 
