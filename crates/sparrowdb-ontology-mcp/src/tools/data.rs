@@ -972,6 +972,43 @@ pub fn validate(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
         }
     }
 
+    // ── Step 3: per-class unseeded warning ────────────────────────────────────
+    // When a specific class_name is provided and validation passes (no violations),
+    // warn if the class has 0 declared properties — calling create_entity with any
+    // properties will be rejected until add_property has been called.
+    if violations.is_empty() {
+        if let Some(class_name) = args["class_name"].as_str() {
+            if !class_name.is_empty() {
+                match resolve(db, class_name, AliasKind::Class) {
+                    Ok(resolved) => {
+                        let safe_sid = escape_cypher_string(&resolved.symbol_id);
+                        let prop_q = format!(
+                            "MATCH (c:{CLASS_LABEL} {{symbol_id: '{safe_sid}'}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
+                             RETURN p.name"
+                        );
+                        let prop_count = execute_or_empty(db, &prop_q)
+                            .map(|r| r.rows.len())
+                            .unwrap_or(0);
+                        if prop_count == 0 {
+                            warnings.push(json!(
+                                format!(
+                                    "{} has 0 declared properties. create_entity will reject any \
+                                     properties until add_property is called. This validation result \
+                                     does not guarantee create_entity will succeed.",
+                                    resolved.canonical_name
+                                )
+                            ));
+                        }
+                    }
+                    Err(_) => {
+                        // Unresolvable class name — leave it; violations will catch this
+                        // if full_graph scan ran, or silently skip if scope was narrower.
+                    }
+                }
+            }
+        }
+    }
+
     let duration_ms = start.elapsed().as_millis() as u64;
     let violations_found = violations.len() as u64;
     let warnings_found = warnings.len() as u64;
