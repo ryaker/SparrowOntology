@@ -60,8 +60,8 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
                 "expected_domain": expected,
                 "actual_source": actual,
                 "suggestion": format!(
-                    "Relation '{relation}' requires the source node to be of class '{expected}', \
-                     but got '{actual}'. Use a node of class '{expected}' as the source."
+                    "Relation '{relation}' requires the source entity to be of class '{expected}', \
+                     but got '{actual}'. Call explain_symbol('{relation}') to see full domain/range constraints."
                 ),
             })
         }
@@ -74,8 +74,8 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
                 "expected_range": expected,
                 "actual_target": actual,
                 "suggestion": format!(
-                    "Relation '{relation}' requires the target node to be of class '{expected}', \
-                     but got '{actual}'. Use a node of class '{expected}' as the target."
+                    "Relation '{relation}' requires the target entity to be of class '{expected}', \
+                     but got '{actual}'. Call explain_symbol('{relation}') to see full domain/range constraints."
                 ),
             })
         }
@@ -123,8 +123,8 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
                 "class": class,
                 "property": property,
                 "suggestion": format!(
-                    "Property '{property}' is already declared on class '{class}'. \
-                     Use get_ontology to inspect existing properties."
+                    "Property '{property}' is already declared on '{class}'. \
+                     Call explain_symbol('{class}') to see all existing properties."
                 ),
             })
         }
