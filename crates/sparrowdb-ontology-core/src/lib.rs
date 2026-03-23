@@ -1,5 +1,6 @@
 pub mod error;
 pub mod hierarchy;
+pub mod import;
 pub mod init;
 pub mod model;
 pub mod namespace;
@@ -9,6 +10,7 @@ pub mod validation;
 // ── Convenient re-exports ────────────────────────────────────────────────────
 
 pub use error::SoError;
+pub use import::{import_records, ImportError, ImportResult, ImportTemplate};
 pub use init::{add_alias, add_property, define_subclass, init, InitResult, StarterKind};
 pub use model::{
     AliasKind, OntologyAlias, OntologyClass, OntologyConstraint, OntologyProperty,

@@ -6,10 +6,11 @@ description = "Ontology semantic layer for SparrowDB"
 license = "MIT"
 
 [dependencies]
-# SparrowDB engine — switch to crates.io version when SPA-210 ships
+# SparrowDB engine — TODO: switch to crates.io version when SPA-210 patch ships (v0.1.1)
+# sparrowdb v0.1.0 has broken include_str!("../../../README.md") in crates.io registry
 sparrowdb = { git = "https://github.com/ryaker/SparrowDB" }
 # Sub-crate deps needed for QueryResult, Value(exec), Error, and Value(storage) types.
-# sparrowdb does not re-export them yet — TODO: simplify once SPA-210 publishes.
+# sparrowdb does not re-export them yet — TODO: simplify in a future sparrowdb release.
 # SPA-208: __SO_ prefix is protected at Cypher layer; we use WriteTx low-level API
 # for seeding (bypasses Cypher-layer reservation check, which is correct behavior).
 sparrowdb-execution = { git = "https://github.com/ryaker/SparrowDB" }
@@ -22,6 +23,8 @@ thiserror = "1"
 
 [dev-dependencies]
 tempfile = "3"
+csv = "1"
+serde_json = "1"
 
 [[test]]
 name = "test_world_model"
@@ -46,3 +49,7 @@ path = "../../tests/integration/test_add_property.rs"
 [[test]]
 name = "test_starter_templates"
 path = "../../tests/integration/test_starter_templates.rs"
+
+[[test]]
+name = "test_import"
+path = "../../tests/integration/test_import.rs"

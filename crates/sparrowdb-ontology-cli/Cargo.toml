@@ -20,6 +20,7 @@ sparrowdb = { git = "https://github.com/ryaker/SparrowDB" }
 sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB" }
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
+csv = "1"
 
 [dev-dependencies]
 tempfile = "3"
