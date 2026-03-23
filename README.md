@@ -3,6 +3,9 @@
 **Schema-enforced graph memory for AI agents — embedded, local, zero infrastructure.**
 
 [![CI](https://github.com/ryaker/SparrowOntology/actions/workflows/ci.yml/badge.svg)](https://github.com/ryaker/SparrowOntology/actions/workflows/ci.yml)
+[![Crates.io (core)](https://img.shields.io/crates/v/sparrowdb-ontology-core.svg)](https://crates.io/crates/sparrowdb-ontology-core)
+[![Crates.io (mcp)](https://img.shields.io/crates/v/sparrowdb-ontology-mcp.svg)](https://crates.io/crates/sparrowdb-ontology-mcp)
+[![Crates.io (cli)](https://img.shields.io/crates/v/sparrowdb-ontology-cli.svg)](https://crates.io/crates/sparrowdb-ontology-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
 ---
@@ -45,28 +48,35 @@ The schema enforces itself. The agent can't write garbage because it gets told w
 **stdio** — Claude Desktop or Claude Code:
 
 ```bash
-git clone https://github.com/ryaker/SparrowOntology
-cd SparrowOntology
-cargo build --release -p sparrowdb-ontology-mcp
+cargo install sparrowdb-ontology-mcp
 ```
 
 ```json
 {
   "mcpServers": {
     "sparrow-ontology": {
-      "command": "/path/to/sparrow-ontology-mcp",
+      "command": "sparrow-ontology-mcp",
       "args": ["--db", "/path/to/your.db"]
     }
   }
 }
 ```
 
+**Build from source:**
+
+```bash
+git clone https://github.com/ryaker/SparrowOntology
+cd SparrowOntology
+cargo build --release -p sparrowdb-ontology-mcp
+```
+
 **HTTP** — remote access, Cloudflare tunnel, mobile:
 
 ```bash
 sparrow-ontology-mcp --db my.db --transport http --port 3456
-# POST /mcp — JSON-RPC endpoint
-# GET  /health — health check
+# POST /mcp     — JSON-RPC endpoint
+# GET  /health  — operational health check
+# GET  /ontology/stats — schema analytics
 ```
 
 ---
@@ -81,15 +91,18 @@ For AI agents reading and writing structured knowledge at inference time, local-
 
 ---
 
-## MCP Tools
+## MCP Tools (17 total)
 
 | Tool | What it does |
 |------|-------------|
-| `start_here` | Schema orientation: class counts, unseeded classes, schema-first workflow |
+| `start_here` | Schema orientation: class counts, unseeded classes, schema-first workflow. Accepts optional `template` param. |
+| `health` | Operational ping — returns `{"status": "ok"}`. Call before any write session. |
+| `stats` | Schema analytics: class/relation/property counts, entity counts per class, totals. |
 | `get_ontology` | Full schema dump: classes, relations, aliases, properties |
 | `define_class` | Add a new entity type |
 | `define_relation` | Add a typed relation with domain + range constraints |
-| `define_subclass` | Subclass hierarchy — cycle detection built in |
+| `define_subclass` | Subclass hierarchy — cycle detection built in, inherits required properties |
+| `define_subproperty` | Property hierarchy — subproperty inherits from parent property |
 | `add_alias` | Register spelling variants (`"org"` → `Organization`) |
 | `add_property` | Declare typed properties on a class (required or optional) |
 | `create_entity` | Write a validated entity — schema checked before storage |
@@ -102,12 +115,29 @@ For AI agents reading and writing structured knowledge at inference time, local-
 
 ---
 
+## Starter Templates
+
+`start_here` accepts an optional `template` param to seed a domain schema in one call:
+
+| Template | Classes | Use when |
+|----------|---------|----------|
+| `WorldModel` | 10 general-purpose | Default. Covers most agentic tasks. |
+| `PersonalKnowledge` | Person, Concept, Event, Location, Document | Personal memory, notes, contact graphs |
+| `ProfessionalNetwork` | Person, Organization, Role, Project, Event | Team ontologies, org charts, project tracking |
+| `ResearchNotes` | Concept, Document, Claim, Person, Asset | Research, citations, evidence chains |
+
+```
+→ start_here({ "template": "ProfessionalNetwork" })
+{ initialized: true, class_count: 5, template: "ProfessionalNetwork", ... }
+```
+
+---
+
 ## Rust library
 
 ```toml
 [dependencies]
-sparrowdb = { git = "https://github.com/ryaker/SparrowDB" }
-sparrowdb-ontology-core = { git = "https://github.com/ryaker/SparrowOntology" }
+sparrowdb-ontology-core = "0.1"
 ```
 
 ```rust
@@ -204,10 +234,10 @@ SparrowDB  (embedded Rust graph engine · zero external deps)
 git clone https://github.com/ryaker/SparrowOntology
 cd SparrowOntology
 cargo build --workspace
-cargo test --workspace       # 86 tests, all integration, no mocks
+cargo test --workspace       # 117 tests, all integration, no mocks
 ```
 
-Requires Rust 1.75+. SparrowDB is pulled as a git dependency.
+Requires Rust 1.75+.
 
 ```
 crates/
@@ -219,12 +249,14 @@ tests/integration/             # Full roundtrip tests against real SparrowDB
 
 ---
 
-## Roadmap
+## Docs
 
-- **crates.io publish** — blocked on SparrowDB upstream stabilization
-- **Property inheritance** — validate subclass entities against parent-class required properties
-- **SPARQL-style query surface** — pattern matching across the ontology without raw Cypher
-- **Multi-agent coordination** — shared schema across concurrent agent sessions
+- [Agent World Model](docs/agent-world-model.md) — multi-agent coordination, schema as contract
+- [Personal Ontology](docs/personal-ontology.md) — durable AI memory for one person
+- [Team Ontology](docs/team-ontology.md) — shared schema for humans + agents
+- [MCP Reference](docs/mcp-reference.md) — all 17 tools with parameters and examples
+- [Schema Reference](docs/schema-reference.md) — WorldModel classes, relations, properties
+- [Research Ontology](docs/research-ontology.md) — claims, evidence, provenance
 
 ---
 

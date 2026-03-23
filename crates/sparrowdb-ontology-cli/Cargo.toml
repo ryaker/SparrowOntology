@@ -4,6 +4,9 @@ version = "0.1.0"
 edition = "2021"
 description = "CLI for Sparrow Ontology — ontology-aware semantic layer over SparrowDB"
 license = "MIT"
+repository = "https://github.com/ryaker/SparrowOntology"
+homepage = "https://github.com/ryaker/SparrowOntology"
+documentation = "https://docs.rs/sparrowdb-ontology-cli"
 
 [[bin]]
 name = "sparrow-ontology"
