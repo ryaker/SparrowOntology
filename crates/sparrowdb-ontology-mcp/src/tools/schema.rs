@@ -224,8 +224,15 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
                 "text": serde_json::to_string(&json!({
                     "status": "uninitialized",
                     "message": "The ontology has not been initialized yet.",
+                    "starter_templates": {
+                        "world_model": "Canonical professional world model — Person, Organization, Project, Task, Role, Event, Decision, Policy, Concept, Dependency (10 classes, 19 relations, 22 properties). Good general-purpose starting point.",
+                        "personal_knowledge": "Personal knowledge graph — Person, Concept, Event, Location, Document (5 classes, 5 relations). Good for personal notes, journaling, and idea networks.",
+                        "professional_network": "Professional network — Person, Organization, Role, Project, Event (5 classes, 6 relations). Good for contact management and career tracking.",
+                        "research_notes": "Research notes — Concept, Document, Claim, Person, Asset (5 classes, 6 relations). Good for academic research, citation tracking, and claim validation.",
+                        "blank": "Empty schema — no classes or relations seeded. Use define_class and define_relation to build from scratch.",
+                    },
                     "next_steps": [
-                        "Call the init tool to bootstrap the ontology with the canonical world model (Person, Organization, Project, Task, …) or start blank.",
+                        "Call the init tool with a starter parameter to bootstrap the ontology. Options: 'world_model' (default), 'personal_knowledge', 'professional_network', 'research_notes', or 'blank'.",
                         "After init, call get_ontology to inspect the schema.",
                         "Then call define_class / define_relation to extend the schema.",
                         "Before calling create_entity with properties, declare each field via add_property(owner='ClassName', name='fieldName').",

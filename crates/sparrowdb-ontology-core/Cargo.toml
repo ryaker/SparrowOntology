@@ -42,3 +42,7 @@ path = "../../tests/integration/test_hierarchy.rs"
 [[test]]
 name = "test_add_property"
 path = "../../tests/integration/test_add_property.rs"
+
+[[test]]
+name = "test_starter_templates"
+path = "../../tests/integration/test_starter_templates.rs"

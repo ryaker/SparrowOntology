@@ -47,7 +47,21 @@ impl<'a> ValidationContext<'a> {
         }
 
         // Rule 3 + 4: all non-reserved keys declared + type-checked
-        let declared = self.get_properties_for_class(&class.symbol_id)?;
+        // Build merged property set: own class properties + inherited from ancestor classes.
+        // Child-declared property wins over ancestor on name collision (child overrides parent).
+        let own_props = self.get_properties_for_class(&class.symbol_id)?;
+        let inherited_props = self.get_inherited_properties(&class.canonical_name)?;
+
+        // Merge: start with inherited, then overwrite with own (child wins)
+        let mut merged: HashMap<String, OntologyProperty> = HashMap::new();
+        for p in inherited_props {
+            merged.entry(p.name.clone()).or_insert(p);
+        }
+        for p in own_props {
+            merged.insert(p.name.clone(), p);
+        }
+        let declared: Vec<OntologyProperty> = merged.into_values().collect();
+
         if !properties.is_empty() && declared.is_empty() {
             return Err(SoError::UnseedeedClass {
                 class_name: class.canonical_name.clone(),
@@ -70,7 +84,7 @@ impl<'a> ValidationContext<'a> {
             self.check_type_match(&class.canonical_name, prop, value)?;
         }
 
-        // Rule 5: required properties must be present on create
+        // Rule 5: required properties must be present on create (including inherited)
         if is_create {
             for prop in &declared {
                 if prop.required
@@ -217,6 +231,59 @@ impl<'a> ValidationContext<'a> {
             });
         }
         Ok(props)
+    }
+
+    /// Walk the `__SO_SUBCLASS_OF` chain and return all properties declared on
+    /// ancestor classes (not including the class itself). The caller is
+    /// responsible for merging with own-class properties so that child
+    /// declarations take precedence.
+    pub fn get_inherited_properties(
+        &self,
+        class_name: &str,
+    ) -> Result<Vec<OntologyProperty>, SoError> {
+        use std::collections::HashSet;
+        let mut all_props: Vec<OntologyProperty> = Vec::new();
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut frontier: Vec<String> = vec![class_name.to_string()];
+
+        // BFS up the hierarchy; skip the starting class itself (own props handled separately)
+        visited.insert(class_name.to_string());
+
+        while let Some(current) = frontier.pop() {
+            // Find parents of current
+            let safe_curr = escape_cypher_string(&current);
+            let q = format!(
+                "MATCH (c:__SO_Class)-[:__SO_SUBCLASS_OF]->(p:__SO_Class) \
+                 WHERE c.name = '{safe_curr}' RETURN p.symbol_id, p.name"
+            );
+            let result = match self.db.execute(&q) {
+                Ok(r) => r,
+                Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                    if msg.contains("unknown label")
+                        || msg.contains("unknown relationship type") =>
+                {
+                    continue;
+                }
+                Err(e) => return Err(SoError::Storage(e)),
+            };
+            for row in &result.rows {
+                let parent_sym_id = match row.first() {
+                    Some(sparrowdb_execution::Value::String(s)) => s.clone(),
+                    _ => continue,
+                };
+                let parent_name = match row.get(1) {
+                    Some(sparrowdb_execution::Value::String(s)) => s.clone(),
+                    _ => continue,
+                };
+                if visited.insert(parent_name.clone()) {
+                    // Collect this parent's own properties
+                    let parent_props = self.get_properties_for_class(&parent_sym_id)?;
+                    all_props.extend(parent_props);
+                    frontier.push(parent_name);
+                }
+            }
+        }
+        Ok(all_props)
     }
 
     /// Return the canonical domain class name for a relation.

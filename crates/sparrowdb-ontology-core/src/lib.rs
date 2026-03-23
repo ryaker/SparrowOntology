@@ -14,6 +14,9 @@ pub use model::{
     AliasKind, OntologyAlias, OntologyClass, OntologyConstraint, OntologyProperty,
     OntologyRelation, OwnerKind, PropertyType, PropertyValue, SymbolStatus,
     canonical_world_model, canonical_world_model_properties, canonical_world_model_relations,
+    personal_knowledge_classes, personal_knowledge_properties, personal_knowledge_relations,
+    professional_network_classes, professional_network_properties, professional_network_relations,
+    research_notes_classes, research_notes_properties, research_notes_relations,
 };
 pub use resolution::{resolve, ResolvedSymbol};
 pub use validation::ValidationContext;

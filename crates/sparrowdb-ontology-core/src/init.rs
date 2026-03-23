@@ -8,6 +8,9 @@ use sparrowdb_storage::node_store::Value as StoreValue;
 use crate::error::SoError;
 use crate::model::{
     canonical_world_model, canonical_world_model_properties, canonical_world_model_relations,
+    personal_knowledge_classes, personal_knowledge_properties, personal_knowledge_relations,
+    professional_network_classes, professional_network_properties, professional_network_relations,
+    research_notes_classes, research_notes_properties, research_notes_relations,
     AliasKind, OntologyClass, OntologyProperty, OntologyRelation, PropertyType,
 };
 use crate::namespace::{
@@ -31,6 +34,9 @@ pub struct InitResult {
 pub enum StarterKind {
     WorldModel,
     Blank,
+    PersonalKnowledge,
+    ProfessionalNetwork,
+    ResearchNotes,
 }
 
 // ── init ──────────────────────────────────────────────────────────────────────
@@ -85,9 +91,30 @@ pub fn init(
     // Re-seeding is idempotent: create_label is idempotent, existing nodes
     // with same symbol_id are simply re-written over the same storage slot.
 
-    let classes = canonical_world_model();
-    let relations = canonical_world_model_relations();
-    let properties = canonical_world_model_properties();
+    let resolved_starter = starter.unwrap_or(StarterKind::WorldModel);
+
+    let (classes, relations, properties) = match &resolved_starter {
+        StarterKind::WorldModel | StarterKind::Blank => (
+            canonical_world_model(),
+            canonical_world_model_relations(),
+            canonical_world_model_properties(),
+        ),
+        StarterKind::PersonalKnowledge => (
+            personal_knowledge_classes(),
+            personal_knowledge_relations(),
+            personal_knowledge_properties(),
+        ),
+        StarterKind::ProfessionalNetwork => (
+            professional_network_classes(),
+            professional_network_relations(),
+            professional_network_properties(),
+        ),
+        StarterKind::ResearchNotes => (
+            research_notes_classes(),
+            research_notes_relations(),
+            research_notes_properties(),
+        ),
+    };
 
     // Seed classes first — track name → NodeId for edge creation
     let mut class_ids: HashMap<String, NodeId> = HashMap::new();
@@ -157,7 +184,7 @@ pub fn init(
         classes_created: classes.len(),
         relations_created: relations.len(),
         properties_created: properties.len(),
-        starter: starter.unwrap_or(StarterKind::WorldModel),
+        starter: resolved_starter,
     })
 }
 
