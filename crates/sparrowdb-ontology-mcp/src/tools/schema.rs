@@ -82,6 +82,8 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
         "define_subproperty" => define_subproperty(db, params),
         "resolve_name" => tool_resolve_name(db, params),
         "add_property" => tool_add_property(db, params),
+        "health" => health(db, params),
+        "stats" => stats(db, params),
         _ => Err(mcp_error(-32601, "Method not found", json!({"tool": name}))),
     }
 }
@@ -956,4 +958,199 @@ fn int_val(row: &[ExecValue], idx: usize) -> i64 {
     row.get(idx)
         .and_then(|v| if let ExecValue::Int64(n) = v { Some(*n) } else { None })
         .unwrap_or(0)
+}
+
+// ── health ────────────────────────────────────────────────────────────────────
+
+/// Return operational status: db connectivity, class/relation counts, db path.
+pub fn health(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
+    let q = format!("MATCH (n:{CLASS_LABEL}) RETURN count(n)");
+    let (db_connected, class_count) = match db.execute(&q) {
+        Ok(result) => {
+            let count = result
+                .rows
+                .first()
+                .and_then(|r| r.first())
+                .map(|v| match v {
+                    ExecValue::Int64(n) => *n,
+                    _ => 0,
+                })
+                .unwrap_or(0);
+            (true, count)
+        }
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
+            // DB is open but ontology not yet initialized — still connected
+            (true, 0)
+        }
+        Err(_) => (false, 0),
+    };
+
+    let relation_count = if db_connected && class_count > 0 {
+        let q2 = format!("MATCH (n:{RELATION_LABEL}) RETURN count(n)");
+        match execute_or_empty(db, &q2) {
+            Ok(r) => r
+                .rows
+                .first()
+                .and_then(|row| row.first())
+                .map(|v| match v {
+                    ExecValue::Int64(n) => *n,
+                    _ => 0,
+                })
+                .unwrap_or(0),
+            Err(_) => 0,
+        }
+    } else {
+        0
+    };
+
+    let payload = json!({
+        "status": "ok",
+        "service": "sparrow-ontology-mcp",
+        "db_connected": db_connected,
+        "class_count": class_count,
+        "relation_count": relation_count,
+    });
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(&payload).unwrap_or_default()
+        }]
+    }))
+}
+
+// ── stats ─────────────────────────────────────────────────────────────────────
+
+/// Return ontology analytics: schema counts, unseeded classes, entity counts by class.
+pub fn stats(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
+    // --- Schema section ---
+    let q_class = format!("MATCH (n:{CLASS_LABEL}) RETURN count(n)");
+    let class_count = match db.execute(&q_class) {
+        Ok(result) => result
+            .rows
+            .first()
+            .and_then(|r| r.first())
+            .map(|v| match v {
+                ExecValue::Int64(n) => *n,
+                _ => 0,
+            })
+            .unwrap_or(0),
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => 0,
+        Err(e) => {
+            return Err(mcp_error(
+                -32603,
+                "Database error",
+                json!({"detail": e.to_string()}),
+            ))
+        }
+    };
+
+    let relation_count = {
+        let q = format!("MATCH (n:{RELATION_LABEL}) RETURN count(n)");
+        match execute_or_empty(db, &q) {
+            Ok(r) => r
+                .rows
+                .first()
+                .and_then(|row| row.first())
+                .map(|v| match v {
+                    ExecValue::Int64(n) => *n,
+                    _ => 0,
+                })
+                .unwrap_or(0),
+            Err(_) => 0,
+        }
+    };
+
+    let property_count = {
+        let q = format!("MATCH (p:{PROPERTY_LABEL}) RETURN count(p)");
+        match execute_or_empty(db, &q) {
+            Ok(r) => r
+                .rows
+                .first()
+                .and_then(|row| row.first())
+                .map(|v| match v {
+                    ExecValue::Int64(n) => *n,
+                    _ => 0,
+                })
+                .unwrap_or(0),
+            Err(_) => 0,
+        }
+    };
+
+    // All class names
+    let all_class_names: Vec<String> = {
+        let q = format!("MATCH (c:{CLASS_LABEL}) RETURN c.name");
+        match execute_or_empty(db, &q) {
+            Ok(r) => r.rows.iter().map(|row| str_val(row, 0)).collect(),
+            Err(_) => vec![],
+        }
+    };
+
+    // Seeded class names (those with at least one declared property)
+    let seeded_names: std::collections::HashSet<String> = {
+        let q = format!(
+            "MATCH (c:{CLASS_LABEL})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) RETURN c.name"
+        );
+        match execute_or_empty(db, &q) {
+            Ok(r) => r.rows.iter().map(|row| str_val(row, 0)).collect(),
+            Err(_) => std::collections::HashSet::new(),
+        }
+    };
+
+    let mut unseeded_classes: Vec<String> = all_class_names
+        .iter()
+        .filter(|name| !seeded_names.contains(*name))
+        .cloned()
+        .collect();
+    unseeded_classes.sort();
+
+    // --- Entities section ---
+    let mut total_entities: i64 = 0;
+    let mut by_class = serde_json::Map::new();
+
+    for class_name in &all_class_names {
+        let escaped = escape_cypher_string(class_name);
+        let q = format!("MATCH (n:{escaped}) RETURN count(n)");
+        let count = match db.execute(&q) {
+            Ok(r) => r
+                .rows
+                .first()
+                .and_then(|row| row.first())
+                .map(|v| match v {
+                    ExecValue::Int64(n) => *n,
+                    _ => 0,
+                })
+                .unwrap_or(0),
+            // "unknown label" means no entities of this class yet — treat as 0
+            Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                if msg.contains("unknown label") =>
+            {
+                0
+            }
+            // Any other error: skip this class silently
+            Err(_) => 0,
+        };
+        total_entities += count;
+        by_class.insert(class_name.clone(), json!(count));
+    }
+
+    let payload = json!({
+        "schema": {
+            "class_count": class_count,
+            "relation_count": relation_count,
+            "property_count": property_count,
+            "unseeded_classes": unseeded_classes,
+        },
+        "entities": {
+            "total": total_entities,
+            "by_class": by_class,
+        }
+    });
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(&payload).unwrap_or_default()
+        }]
+    }))
 }

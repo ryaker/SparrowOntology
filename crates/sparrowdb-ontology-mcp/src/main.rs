@@ -128,8 +128,46 @@ async fn run_http(db: sparrowdb::GraphDb, port: u16) {
 
     let shared = Arc::new(Mutex::new(db));
 
-    async fn health() -> impl IntoResponse {
-        axum::Json(json!({"status": "ok", "service": "sparrow-ontology-mcp"}))
+    async fn health_endpoint(State(db): State<SharedDb>) -> impl IntoResponse {
+        let guard = match db.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(json!({"error": "db lock poisoned"})),
+                )
+                    .into_response();
+            }
+        };
+        match tools::handle_tool_call(&guard, "health", None) {
+            Ok(result) => {
+                let text = result["content"][0]["text"].as_str().unwrap_or("{}");
+                let payload: Value = serde_json::from_str(text).unwrap_or(json!({}));
+                (StatusCode::OK, axum::Json(payload)).into_response()
+            }
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(e)).into_response(),
+        }
+    }
+
+    async fn stats_endpoint(State(db): State<SharedDb>) -> impl IntoResponse {
+        let guard = match db.lock() {
+            Ok(g) => g,
+            Err(_) => {
+                return (
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    axum::Json(json!({"error": "db lock poisoned"})),
+                )
+                    .into_response();
+            }
+        };
+        match tools::handle_tool_call(&guard, "stats", None) {
+            Ok(result) => {
+                let text = result["content"][0]["text"].as_str().unwrap_or("{}");
+                let payload: Value = serde_json::from_str(text).unwrap_or(json!({}));
+                (StatusCode::OK, axum::Json(payload)).into_response()
+            }
+            Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, axum::Json(e)).into_response(),
+        }
     }
 
     async fn mcp_endpoint(
@@ -177,7 +215,8 @@ async fn run_http(db: sparrowdb::GraphDb, port: u16) {
     }
 
     let app = Router::new()
-        .route("/health", get(health))
+        .route("/health", get(health_endpoint))
+        .route("/ontology/stats", get(stats_endpoint))
         .route("/mcp", post(mcp_endpoint))
         .with_state(shared);
 
@@ -190,8 +229,9 @@ async fn run_http(db: sparrowdb::GraphDb, port: u16) {
         }
     };
     eprintln!("sparrow-ontology-mcp listening on http://{addr}");
-    eprintln!("  POST /mcp   — JSON-RPC endpoint");
-    eprintln!("  GET  /health — health check");
+    eprintln!("  POST /mcp            — JSON-RPC endpoint");
+    eprintln!("  GET  /health         — health check");
+    eprintln!("  GET  /ontology/stats — ontology analytics");
     if let Err(e) = axum::serve(listener, app).await {
         eprintln!("Server error: {e}");
         std::process::exit(1);
@@ -444,6 +484,24 @@ fn tool_list() -> Value {
                         "properties": {"type": "object", "description": "Properties to validate"}
                     },
                     "required": ["class_name"]
+                }
+            },
+            {
+                "name": "health",
+                "description": "Return operational status of the running server and DB connection. Reports db_connected, class_count, and relation_count.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "stats",
+                "description": "Return ontology analytics: schema counts (classes, relations, properties), unseeded classes, and entity counts per class.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
                 }
             }
         ]
