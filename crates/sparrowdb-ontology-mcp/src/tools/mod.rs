@@ -21,7 +21,9 @@ pub fn handle_tool_call(
         | "add_property"
         | "define_subclass"
         | "define_subproperty"
-        | "resolve_name" => schema::dispatch(db, name, params),
+        | "resolve_name"
+        | "health"
+        | "stats" => schema::dispatch(db, name, params),
 
         // Data / entity tools
         "create_entity"

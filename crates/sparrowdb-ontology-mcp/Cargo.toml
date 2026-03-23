@@ -33,3 +33,7 @@ tempfile = "3"
 [[test]]
 name = "test_mcp_phase2"
 path = "../../tests/integration/test_mcp_phase2.rs"
+
+[[test]]
+name = "test_mcp_monitoring"
+path = "../../tests/integration/test_mcp_monitoring.rs"
