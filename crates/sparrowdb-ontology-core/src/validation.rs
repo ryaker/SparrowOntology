@@ -136,24 +136,41 @@ impl<'a> ValidationContext<'a> {
         if class_name == ancestor_name {
             return Ok(true);
         }
-        let safe_class = escape_cypher_string(class_name);
-        let safe_anc = escape_cypher_string(ancestor_name);
-        // SPA-224 fixed in SparrowDB PR #98 — *1..N variable-length paths now work
-        // correctly on __SO_-prefixed labels. Single Cypher query suffices.
-        let q = format!(
-            "MATCH (c:__SO_Class {{name: '{safe_class}'}})-[:__SO_SUBCLASS_OF*1..20]->(a:__SO_Class {{name: '{safe_anc}'}}) \
-             RETURN c.name LIMIT 1"
-        );
-        let result = match self.db.execute(&q) {
-            Ok(r) => r,
-            Err(sparrowdb_common::Error::InvalidArgument(ref msg))
-                if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
-            {
-                return Ok(false);
+        // BFS from class_name following SUBCLASS_OF edges toward ancestors.
+        // Single-hop queries avoid SparrowDB's variable-length path bugs.
+        use std::collections::HashSet;
+        let mut visited: HashSet<String> = HashSet::new();
+        let mut frontier: Vec<String> = vec![class_name.to_string()];
+
+        while let Some(current) = frontier.pop() {
+            if !visited.insert(current.clone()) {
+                continue;
             }
-            Err(e) => return Err(SoError::Storage(e)),
-        };
-        Ok(!result.rows.is_empty())
+            let safe_curr = escape_cypher_string(&current);
+            let q = format!(
+                "MATCH (c:__SO_Class)-[:__SO_SUBCLASS_OF]->(a:__SO_Class) \
+                 WHERE c.name = '{safe_curr}' RETURN a.name"
+            );
+            let result = match self.db.execute(&q) {
+                Ok(r) => r,
+                Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                    if msg.contains("unknown label")
+                        || msg.contains("unknown relationship type") =>
+                {
+                    continue;
+                }
+                Err(e) => return Err(SoError::Storage(e)),
+            };
+            for row in &result.rows {
+                if let Some(sparrowdb_execution::Value::String(name)) = row.first() {
+                    if name == ancestor_name {
+                        return Ok(true);
+                    }
+                    frontier.push(name.clone());
+                }
+            }
+        }
+        Ok(false)
     }
 
     /// Return all OntologyProperty definitions attached to the class with `symbol_id`.

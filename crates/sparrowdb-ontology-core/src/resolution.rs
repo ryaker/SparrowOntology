@@ -92,6 +92,31 @@ pub fn resolve(db: &GraphDb, name: &str, kind: AliasKind) -> Result<ResolvedSymb
     }
 
     let valid = list_canonical_names(db, kind)?;
+    let name_lower = name.to_lowercase();
+
+    // Pass 3: case-insensitive exact match — auto-resolve "person" → "Person".
+    // Similarity == 1.0 means case-insensitive exact match. Auto-resolve instead of error.
+    if let Some(canonical) = valid.iter().find(|n| n.to_lowercase() == name_lower) {
+        let safe_canonical = escape_cypher_string(canonical);
+        let q = format!(
+            "MATCH (n:{canonical_label}) WHERE n.name = '{safe_canonical}' RETURN n.symbol_id, n.name"
+        );
+        if let Ok(result) = db.execute(&q) {
+            if let Some(row) = result.rows.first() {
+                if let (Ok(symbol_id), Ok(canonical_name)) = (
+                    str_from_value(&row[0]).map(|s| s.to_string()),
+                    str_from_value(&row[1]).map(|s| s.to_string()),
+                ) {
+                    return Ok(ResolvedSymbol {
+                        canonical_name,
+                        symbol_id,
+                        was_alias: true,
+                        original_name: name.to_string(),
+                    });
+                }
+            }
+        }
+    }
 
     let closest = valid
         .iter()
