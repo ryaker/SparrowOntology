@@ -247,6 +247,149 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
     ]
 }
 
+// ── PersonalKnowledge starter ─────────────────────────────────────────────────
+
+pub fn personal_knowledge_classes() -> Vec<OntologyClass> {
+    vec![
+        OntologyClass::new("Person", "A human individual"),
+        OntologyClass::new("Concept", "An idea, skill, domain, or area of knowledge"),
+        OntologyClass::new("Event", "A time-bounded occurrence"),
+        OntologyClass::new("Location", "A physical or virtual place"),
+        OntologyClass::new("Document", "A file, note, article, or written artifact"),
+    ]
+}
+
+pub fn personal_knowledge_relations() -> Vec<OntologyRelation> {
+    vec![
+        OntologyRelation::new("KNOWS", "Person", "Person"),
+        OntologyRelation::new("RELATED_TO", "Concept", "Concept"),
+        OntologyRelation::new("OCCURRED_AT", "Event", "Location"),
+        OntologyRelation::new("LOCATED_IN", "Person", "Location"),
+        OntologyRelation::new("PART_OF", "Concept", "Concept"),
+    ]
+}
+
+pub fn personal_knowledge_properties() -> Vec<OntologyProperty> {
+    vec![
+        OntologyProperty::required("Person", "name", PropertyType::String),
+        OntologyProperty::optional("Person", "description", PropertyType::String),
+        OntologyProperty::optional("Person", "url", PropertyType::String),
+        OntologyProperty::optional("Person", "created_at", PropertyType::Date),
+        OntologyProperty::required("Concept", "name", PropertyType::String),
+        OntologyProperty::optional("Concept", "description", PropertyType::String),
+        OntologyProperty::optional("Concept", "created_at", PropertyType::Date),
+        OntologyProperty::required("Event", "name", PropertyType::String),
+        OntologyProperty::optional("Event", "description", PropertyType::String),
+        OntologyProperty::optional("Event", "start_date", PropertyType::Date),
+        OntologyProperty::optional("Event", "end_date", PropertyType::Date),
+        OntologyProperty::optional("Event", "created_at", PropertyType::Date),
+        OntologyProperty::required("Location", "name", PropertyType::String),
+        OntologyProperty::optional("Location", "description", PropertyType::String),
+        OntologyProperty::optional("Location", "created_at", PropertyType::Date),
+        OntologyProperty::required("Document", "name", PropertyType::String),
+        OntologyProperty::optional("Document", "description", PropertyType::String),
+        OntologyProperty::optional("Document", "url", PropertyType::String),
+        OntologyProperty::optional("Document", "created_at", PropertyType::Date),
+    ]
+}
+
+// ── ProfessionalNetwork starter ───────────────────────────────────────────────
+
+pub fn professional_network_classes() -> Vec<OntologyClass> {
+    vec![
+        OntologyClass::new("Person", "A human individual"),
+        OntologyClass::new("Organization", "A company, team, institution, or group"),
+        OntologyClass::new("Role", "A function or position a person plays"),
+        OntologyClass::new("Project", "A bounded piece of work with a goal"),
+        OntologyClass::new("Event", "A time-bounded occurrence"),
+    ]
+}
+
+pub fn professional_network_relations() -> Vec<OntologyRelation> {
+    vec![
+        OntologyRelation::new("WORKS_FOR", "Person", "Organization"),
+        OntologyRelation::new("MEMBER_OF", "Person", "Organization"),
+        OntologyRelation::new("LEADS", "Person", "Project"),
+        OntologyRelation::new("HAS_ROLE", "Person", "Role"),
+        OntologyRelation::new("PARTICIPATED_IN", "Person", "Event"),
+        OntologyRelation::new("DEPENDS_ON", "Project", "Project"),
+    ]
+}
+
+pub fn professional_network_properties() -> Vec<OntologyProperty> {
+    vec![
+        OntologyProperty::required("Person", "name", PropertyType::String),
+        OntologyProperty::optional("Person", "description", PropertyType::String),
+        OntologyProperty::optional("Person", "email", PropertyType::String),
+        OntologyProperty::optional("Person", "phone", PropertyType::String),
+        OntologyProperty::optional("Person", "created_at", PropertyType::Date),
+        OntologyProperty::required("Organization", "name", PropertyType::String),
+        OntologyProperty::optional("Organization", "description", PropertyType::String),
+        OntologyProperty::optional("Organization", "url", PropertyType::String),
+        OntologyProperty::optional("Organization", "created_at", PropertyType::Date),
+        OntologyProperty::required("Role", "name", PropertyType::String),
+        OntologyProperty::optional("Role", "description", PropertyType::String),
+        OntologyProperty::optional("Role", "created_at", PropertyType::Date),
+        OntologyProperty::required("Project", "name", PropertyType::String),
+        OntologyProperty::optional("Project", "description", PropertyType::String),
+        OntologyProperty::optional("Project", "start_date", PropertyType::Date),
+        OntologyProperty::optional("Project", "end_date", PropertyType::Date),
+        OntologyProperty::optional("Project", "created_at", PropertyType::Date),
+        OntologyProperty::required("Event", "name", PropertyType::String),
+        OntologyProperty::optional("Event", "description", PropertyType::String),
+        OntologyProperty::optional("Event", "start_date", PropertyType::Date),
+        OntologyProperty::optional("Event", "end_date", PropertyType::Date),
+        OntologyProperty::optional("Event", "created_at", PropertyType::Date),
+    ]
+}
+
+// ── ResearchNotes starter ─────────────────────────────────────────────────────
+
+pub fn research_notes_classes() -> Vec<OntologyClass> {
+    vec![
+        OntologyClass::new("Concept", "An idea, skill, domain, or area of knowledge"),
+        OntologyClass::new("Document", "A file, note, article, or written artifact"),
+        OntologyClass::new("Claim", "An assertion or proposition that can be supported or contradicted"),
+        OntologyClass::new("Person", "A human individual"),
+        OntologyClass::new("Asset", "A resource, dataset, tool, or artifact"),
+    ]
+}
+
+pub fn research_notes_relations() -> Vec<OntologyRelation> {
+    vec![
+        OntologyRelation::new("CITES", "Document", "Document"),
+        OntologyRelation::new("SUPPORTS", "Claim", "Claim"),
+        OntologyRelation::new("CONTRADICTS", "Claim", "Claim"),
+        OntologyRelation::new("DERIVED_FROM", "Concept", "Concept"),
+        OntologyRelation::new("AUTHORED", "Person", "Document"),
+        OntologyRelation::new("TAGGED_WITH", "Document", "Concept"),
+    ]
+}
+
+pub fn research_notes_properties() -> Vec<OntologyProperty> {
+    vec![
+        OntologyProperty::required("Concept", "name", PropertyType::String),
+        OntologyProperty::optional("Concept", "description", PropertyType::String),
+        OntologyProperty::optional("Concept", "created_at", PropertyType::Date),
+        OntologyProperty::required("Document", "name", PropertyType::String),
+        OntologyProperty::optional("Document", "description", PropertyType::String),
+        OntologyProperty::optional("Document", "url", PropertyType::String),
+        OntologyProperty::optional("Document", "created_at", PropertyType::Date),
+        OntologyProperty::required("Claim", "name", PropertyType::String),
+        OntologyProperty::optional("Claim", "description", PropertyType::String),
+        OntologyProperty::optional("Claim", "source", PropertyType::String),
+        OntologyProperty::optional("Claim", "confidence", PropertyType::String),
+        OntologyProperty::optional("Claim", "created_at", PropertyType::Date),
+        OntologyProperty::required("Person", "name", PropertyType::String),
+        OntologyProperty::optional("Person", "description", PropertyType::String),
+        OntologyProperty::optional("Person", "created_at", PropertyType::Date),
+        OntologyProperty::required("Asset", "name", PropertyType::String),
+        OntologyProperty::optional("Asset", "description", PropertyType::String),
+        OntologyProperty::optional("Asset", "url", PropertyType::String),
+        OntologyProperty::optional("Asset", "created_at", PropertyType::Date),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -256,5 +399,26 @@ mod tests {
         assert_eq!(canonical_world_model().len(), 10);
         assert_eq!(canonical_world_model_relations().len(), 19);
         assert_eq!(canonical_world_model_properties().len(), 22);
+    }
+
+    #[test]
+    fn personal_knowledge_counts() {
+        assert_eq!(personal_knowledge_classes().len(), 5);
+        assert_eq!(personal_knowledge_relations().len(), 5);
+        assert_eq!(personal_knowledge_properties().len(), 19);
+    }
+
+    #[test]
+    fn professional_network_counts() {
+        assert_eq!(professional_network_classes().len(), 5);
+        assert_eq!(professional_network_relations().len(), 6);
+        assert_eq!(professional_network_properties().len(), 22);
+    }
+
+    #[test]
+    fn research_notes_counts() {
+        assert_eq!(research_notes_classes().len(), 5);
+        assert_eq!(research_notes_relations().len(), 6);
+        assert_eq!(research_notes_properties().len(), 19);
     }
 }
