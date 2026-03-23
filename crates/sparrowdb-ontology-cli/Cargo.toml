@@ -14,10 +14,10 @@ name = "sparrowdb_ontology_cli"
 path = "src/lib.rs"
 
 [dependencies]
-sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core" }
-sparrowdb-ontology-mcp = { path = "../sparrowdb-ontology-mcp" }
-sparrowdb = { git = "https://github.com/ryaker/SparrowDB" }
-sparrowdb-common = { git = "https://github.com/ryaker/SparrowDB" }
+sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core", version = "0.1" }
+sparrowdb-ontology-mcp = { path = "../sparrowdb-ontology-mcp", version = "0.1" }
+sparrowdb = "0.1"
+sparrowdb-common = "0.1"
 serde_json = "1"
 clap = { version = "4", features = ["derive"] }
 csv = "1"

@@ -936,7 +936,9 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9a7f6883832ad0f70a4d2fd55a775c150bbaf70e9db60feefe7943271ba240eb"
 dependencies = [
  "clap",
  "rand",
@@ -952,7 +954,9 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-catalog"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65ee055ed4240aca90b5386d03fcded8b07f524439e0d3059de90762caefb6f6"
 dependencies = [
  "crc32fast",
  "sparrowdb-common",
@@ -961,7 +965,9 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-common"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4e12da1b0ae39671a107d7213b9cb90c192169330782bfcf4f12053f080fbd60"
 dependencies = [
  "crc32fast",
  "serde",
@@ -969,7 +975,9 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-cypher"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6ae1eeaa9807d3b90ed0326b1a6b7f42eaead51e313dc4d6b81ffa8d17206038"
 dependencies = [
  "sparrowdb-catalog",
  "sparrowdb-common",
@@ -977,7 +985,9 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-execution"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5a62399638549b9e8c814639f927d289e50970df2734952c1249c769eb187c69"
 dependencies = [
  "bincode",
  "roaring",
@@ -1042,7 +1052,9 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-storage"
-version = "0.1.0"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35b575fb5e40bdbca6e6be4c15837f933798bb444b0d07e2c96c3672b6d14fe4"
 dependencies = [
  "chacha20poly1305",
  "crc32c",
