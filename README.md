@@ -7,6 +7,7 @@
 [![Crates.io (mcp)](https://img.shields.io/crates/v/sparrowdb-ontology-mcp.svg)](https://crates.io/crates/sparrowdb-ontology-mcp)
 [![Crates.io (cli)](https://img.shields.io/crates/v/sparrowdb-ontology-cli.svg)](https://crates.io/crates/sparrowdb-ontology-cli)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/ryaker/SparrowOntology)
 
 ---
 
