@@ -123,6 +123,19 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
+        SoError::UnseedeedClass { class_name } => {
+            json!({
+                "error_kind": "UnseedeedClass",
+                "detail": e.to_string(),
+                "class_name": class_name,
+                "suggestion": format!(
+                    "Class '{class_name}' has no declared properties. \
+                     Call add_property(owner='{class_name}', name='...') for each property \
+                     before writing entities. Call start_here to see all unseeded_classes."
+                ),
+            })
+        }
+
         SoError::AlreadyInitialized => {
             json!({
                 "error_kind": "AlreadyInitialized",

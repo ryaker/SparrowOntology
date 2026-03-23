@@ -52,6 +52,9 @@ pub enum SoError {
     #[error("Property '{property}' already declared on class '{class}'")]
     DuplicateProperty { class: String, property: String },
 
+    #[error("Class '{class_name}' has no declared properties. Call add_property(owner='{class_name}', name='...') for each property before writing entities. Call start_here to see all unseeded_classes.")]
+    UnseedeedClass { class_name: String },
+
     #[error("Ontology already initialized. Use force=true to reset (destructive).")]
     AlreadyInitialized,
 

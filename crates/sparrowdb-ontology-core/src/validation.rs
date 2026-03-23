@@ -48,6 +48,11 @@ impl<'a> ValidationContext<'a> {
 
         // Rule 3 + 4: all non-reserved keys declared + type-checked
         let declared = self.get_properties_for_class(&class.symbol_id)?;
+        if !properties.is_empty() && declared.is_empty() {
+            return Err(SoError::UnseedeedClass {
+                class_name: class.canonical_name.clone(),
+            });
+        }
         for (key, value) in properties {
             if key.starts_with("__so_") {
                 continue;
