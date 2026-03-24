@@ -10,14 +10,14 @@ documentation = "https://docs.rs/sparrowdb-ontology-core"
 
 [dependencies]
 # SparrowDB engine — published to crates.io (SPA-210, v0.1.1)
-sparrowdb = "0.1"
+sparrowdb = "0.1.2"
 # Sub-crate deps needed for QueryResult, Value(exec), Error, and Value(storage) types.
 # sparrowdb does not re-export them yet — TODO: simplify in a future sparrowdb release.
 # SPA-208: __SO_ prefix is protected at Cypher layer; we use WriteTx low-level API
 # for seeding (bypasses Cypher-layer reservation check, which is correct behavior).
-sparrowdb-execution = "0.1"
-sparrowdb-common = "0.1"
-sparrowdb-storage = "0.1"
+sparrowdb-execution = "0.1.2"
+sparrowdb-common = "0.1.2"
+sparrowdb-storage = "0.1.2"
 uuid = { version = "1", features = ["v4"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
