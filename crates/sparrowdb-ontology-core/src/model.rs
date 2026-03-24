@@ -49,15 +49,6 @@ pub enum OwnerKind {
     Relation,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub enum ConstraintKind {
-    /// Advisory in v1 — validate() only, not enforced on write.
-    Unique,
-    /// Enforced when required=true.
-    NotNull,
-    Enum(Vec<std::string::String>),
-}
-
 // ── Structs ──────────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -165,13 +156,6 @@ impl OntologyProperty {
             ..Self::required(owner, name, datatype)
         }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct OntologyConstraint {
-    pub symbol_id: String,
-    pub kind: ConstraintKind,
-    pub property_symbol_id: String,
 }
 
 // ── Canonical world model ─────────────────────────────────────────────────────

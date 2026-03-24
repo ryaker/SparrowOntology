@@ -13,7 +13,7 @@ pub use error::SoError;
 pub use import::{import_records, ImportError, ImportResult, ImportTemplate};
 pub use init::{add_alias, add_property, define_subclass, init, InitResult, StarterKind};
 pub use model::{
-    AliasKind, OntologyAlias, OntologyClass, OntologyConstraint, OntologyProperty,
+    AliasKind, OntologyAlias, OntologyClass, OntologyProperty,
     OntologyRelation, OwnerKind, PropertyType, PropertyValue, SymbolStatus,
     canonical_world_model, canonical_world_model_properties, canonical_world_model_relations,
     personal_knowledge_classes, personal_knowledge_properties, personal_knowledge_relations,
