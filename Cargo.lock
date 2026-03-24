@@ -1003,7 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-ontology-cli"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "clap",
  "csv",
@@ -1017,7 +1017,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-ontology-core"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "csv",
  "serde",
@@ -1033,7 +1033,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-ontology-mcp"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "axum",
  "clap",

@@ -1,6 +1,6 @@
 [package]
 name = "sparrowdb-ontology-mcp"
-version = "0.1.1"
+version = "0.1.2"
 edition = "2021"
 description = "MCP server for Sparrow Ontology — ontology-aware semantic layer over SparrowDB"
 license = "MIT"
