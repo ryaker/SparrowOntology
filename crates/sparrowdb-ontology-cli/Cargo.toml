@@ -17,7 +17,7 @@ name = "sparrowdb_ontology_cli"
 path = "src/lib.rs"
 
 [dependencies]
-sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core", version = "0.1" }
+sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core", version = "0.1.3" }
 sparrowdb-ontology-mcp = { path = "../sparrowdb-ontology-mcp", version = "0.1" }
 sparrowdb = "0.1.2"
 sparrowdb-common = "0.1.2"
