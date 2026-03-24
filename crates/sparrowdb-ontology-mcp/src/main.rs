@@ -1,4 +1,3 @@
-use sparrowdb_ontology_mcp::error;
 use sparrowdb_ontology_mcp::tools;
 
 use clap::{Parser, ValueEnum};
@@ -309,6 +308,18 @@ fn tool_list() -> Value {
                 "inputSchema": {
                     "type": "object",
                     "properties": {},
+                    "required": []
+                }
+            },
+            {
+                "name": "init",
+                "description": "Initialize the ontology schema with a starter template. Creates the initial __SO_Class, __SO_Relation, and __SO_Property nodes.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "starter": {"type": "string", "enum": ["WorldModel", "Blank", "PersonalKnowledge", "ProfessionalNetwork", "ResearchNotes"], "description": "Starter template: Blank (empty), WorldModel (10 classes), or pre-built domains."},
+                        "force": {"type": "boolean", "description": "If true, skip the already-initialized check (default: false)"}
+                    },
                     "required": []
                 }
             },

@@ -14,6 +14,7 @@ pub fn handle_tool_call(
     match name {
         // Schema / ontology-definition tools
         "start_here"
+        | "init"
         | "get_ontology"
         | "define_class"
         | "define_relation"

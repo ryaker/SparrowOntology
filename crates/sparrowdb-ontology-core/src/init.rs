@@ -94,11 +94,12 @@ pub fn init(
     let resolved_starter = starter.unwrap_or(StarterKind::WorldModel);
 
     let (classes, relations, properties) = match &resolved_starter {
-        StarterKind::WorldModel | StarterKind::Blank => (
+        StarterKind::WorldModel => (
             canonical_world_model(),
             canonical_world_model_relations(),
             canonical_world_model_properties(),
         ),
+        StarterKind::Blank => (vec![], vec![], vec![]),
         StarterKind::PersonalKnowledge => (
             personal_knowledge_classes(),
             personal_knowledge_relations(),

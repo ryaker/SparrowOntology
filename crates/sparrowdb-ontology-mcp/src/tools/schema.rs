@@ -9,7 +9,7 @@ use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
-use sparrowdb_ontology_core::{add_alias, add_property, define_subclass, resolve};
+use sparrowdb_ontology_core::{add_alias, add_property, define_subclass, init, resolve, StarterKind};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp};
@@ -74,6 +74,7 @@ fn execute_or_empty(db: &GraphDb, q: &str) -> Result<sparrowdb_execution::QueryR
 pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value, Value> {
     match name {
         "start_here" => start_here(db, params),
+        "init" => tool_init(db, params),
         "get_ontology" => get_ontology(db, params),
         "define_class" => define_class(db, params),
         "define_relation" => define_relation(db, params),
@@ -86,6 +87,42 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
         "stats" => stats(db, params),
         _ => Err(mcp_error(-32601, "Method not found", json!({"tool": name}))),
     }
+}
+
+// ── init ──────────────────────────────────────────────────────────────────────
+
+pub fn tool_init(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+    let force = args["force"].as_bool().unwrap_or(false);
+
+    let (starter, starter_name) = match args["starter"].as_str().unwrap_or("WorldModel") {
+        "Blank" | "blank" => (StarterKind::Blank, "Blank"),
+        "PersonalKnowledge" | "personal_knowledge" => (StarterKind::PersonalKnowledge, "PersonalKnowledge"),
+        "ProfessionalNetwork" | "professional_network" => (StarterKind::ProfessionalNetwork, "ProfessionalNetwork"),
+        "ResearchNotes" | "research_notes" => (StarterKind::ResearchNotes, "ResearchNotes"),
+        _ => (StarterKind::WorldModel, "WorldModel"),
+    };
+
+    let result = init(db, Some(starter), force)
+        .map_err(|e| mcp_error(-32603, "Init failed", json!({"detail": e.to_string()})))?;
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(&json!({
+                "initialized": true,
+                "starter": starter_name,
+                "classes_created": result.classes_created,
+                "relations_created": result.relations_created,
+                "properties_created": result.properties_created,
+                "next_steps": [
+                    "Call start_here to see schema state and unseeded classes.",
+                    "Call get_ontology to view all defined classes and relations.",
+                    "Before calling create_entity with properties, declare each field via add_property(owner='ClassName', name='fieldName')."
+                ]
+            })).unwrap_or_default()
+        }]
+    }))
 }
 
 // ── start_here ────────────────────────────────────────────────────────────────

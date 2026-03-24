@@ -96,29 +96,6 @@ fn props_to_store(props: &HashMap<String, PropertyValue>) -> HashMap<String, Sto
         .collect()
 }
 
-// ── Build Cypher property literal ─────────────────────────────────────────────
-
-fn prop_value_to_cypher(v: &PropertyValue) -> Option<String> {
-    match v {
-        PropertyValue::String(s) => Some(format!("'{}'", escape_cypher_string(s))),
-        PropertyValue::Int64(n) => Some(n.to_string()),
-        PropertyValue::Float64(f) => Some(f.to_string()),
-        PropertyValue::Bool(b) => Some(if *b { "true".to_string() } else { "false".to_string() }),
-        PropertyValue::Null => None, // skip nulls
-    }
-}
-
-// ── Build inline Cypher props string: {key: val, ...} ─────────────────────────
-
-fn build_props_literal(props: &HashMap<String, PropertyValue>) -> String {
-    let pairs: Vec<String> = props
-        .iter()
-        .filter_map(|(k, v)| {
-            prop_value_to_cypher(v).map(|lit| format!("{}: {}", k, lit))
-        })
-        .collect();
-    format!("{{{}}}", pairs.join(", "))
-}
 
 // ── Node label lookup by integer ID ──────────────────────────────────────────
 
@@ -425,13 +402,13 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
         vec![canonical.clone()]
     };
 
-    // Step 3: build WHERE clause from "where" filters
+    // Step 3: build WHERE clause from "filters" parameter
     // Note: backtick quoting not supported by engine — use plain property names.
     // For multi-label subclass expansion, run per-label queries and merge.
     let mut where_clauses: Vec<String> = Vec::new();
 
-    // Add property equality filters from "where" object
-    if let Some(obj) = args["where"].as_object() {
+    // Add property equality filters from "filters" object
+    if let Some(obj) = args["filters"].as_object() {
         for (k, v) in obj {
             let safe_key = escape_cypher_string(k);
             match v {
