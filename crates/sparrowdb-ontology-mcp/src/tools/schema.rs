@@ -836,6 +836,10 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
         .ok_or_else(|| mcp_error(-32602, "Missing required param: name", json!({})))?;
     let datatype = args["datatype"].as_str().unwrap_or("string");
     let required = args["required"].as_bool().unwrap_or(false);
+    let unique = args["unique"].as_bool().unwrap_or(false);
+    let allowed_values: Option<Vec<String>> = args["allowed_values"]
+        .as_array()
+        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect());
 
     let valid_types = ["string", "int64", "float64", "bool", "date", "variant"];
     if !valid_types.contains(&datatype) {
@@ -851,7 +855,7 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
         ));
     }
 
-    let prop = add_property(db, owner, name, datatype, required)
+    let prop = add_property(db, owner, name, datatype, required, unique, allowed_values)
         .map_err(|e| mcp_error(-32602, "add_property failed", so_error_to_mcp(&e)))?;
 
     Ok(json!({
@@ -864,6 +868,8 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
                     "name": prop.name,
                     "datatype": format!("{:?}", prop.datatype).to_lowercase(),
                     "required": prop.required,
+                    "unique": prop.unique,
+                    "allowed_values": prop.allowed_values,
                     "created_at": prop.created_at,
                 }
             })).unwrap_or_default()

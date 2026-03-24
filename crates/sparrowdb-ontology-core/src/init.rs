@@ -181,6 +181,21 @@ pub fn init(
         tx.commit()?;
     }
 
+    // Emit schema indices on internal labels for faster ontology lookups.
+    // Wrapped in individual match arms so a missing label (empty starter) doesn't abort.
+    for label in &[CLASS_LABEL, RELATION_LABEL, PROPERTY_LABEL] {
+        let q = format!("CREATE INDEX ON :{label}(name)");
+        match db.execute(&q) {
+            Ok(_) => {}
+            Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                if msg.contains("unknown label") || msg.contains("already exists") =>
+            {
+                // no nodes seeded yet (Blank) or index already present — ignore
+            }
+            Err(e) => return Err(SoError::Storage(e)),
+        }
+    }
+
     Ok(InitResult {
         classes_created: classes.len(),
         relations_created: relations.len(),
@@ -419,6 +434,8 @@ pub fn add_property(
     prop_name: &str,
     datatype_str: &str,
     required: bool,
+    unique: bool,
+    allowed_values: Option<Vec<String>>,
 ) -> Result<OntologyProperty, SoError> {
     // Guard: reserved key prefix
     if prop_name.starts_with("__so_") || prop_name.starts_with("__SO_") {
@@ -461,6 +478,10 @@ pub fn add_property(
         .as_millis() as i64;
     let symbol_id = uuid::Uuid::new_v4().to_string();
     let datatype_label = property_type_str(&datatype);
+    let enum_json = allowed_values
+        .as_deref()
+        .map(|v| serde_json::to_string(v).unwrap_or_default())
+        .unwrap_or_default();
 
     let mut tx = db.begin_write()?;
     let prop_node_id = tx.merge_node(
@@ -470,6 +491,8 @@ pub fn add_property(
             ("name", sv(prop_name)),
             ("datatype", sv(datatype_label)),
             ("required", bv(required)),
+            ("unique", bv(unique)),
+            ("enum_values", sv(&enum_json)),
             ("owner_symbol_id", sv(&class_sym.symbol_id)),
             ("owner_kind", sv("class")),
             ("created_at", iv(now)),
@@ -483,11 +506,23 @@ pub fn add_property(
     tx2.create_edge(class_node_id, prop_node_id, HAS_PROPERTY_REL, HashMap::new())?;
     tx2.commit()?;
 
+    // Emit uniqueness constraint if requested
+    if unique {
+        let safe_class = escape_cypher_string(&class_sym.canonical_name);
+        let safe_prop = escape_cypher_string(prop_name);
+        let constraint_q = format!(
+            "CREATE CONSTRAINT ON (n:{safe_class}) ASSERT n.{safe_prop} IS UNIQUE"
+        );
+        db.execute(&constraint_q).map_err(SoError::Storage)?;
+    }
+
     Ok(OntologyProperty {
         symbol_id,
         name: prop_name.to_string(),
         datatype,
         required,
+        unique,
+        allowed_values,
         default_value: None,
         owner_symbol_id: class_sym.symbol_id,
         owner_kind: crate::model::OwnerKind::Class,

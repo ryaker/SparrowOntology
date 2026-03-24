@@ -127,6 +127,11 @@ pub struct OntologyProperty {
     pub name: String,
     pub datatype: PropertyType,
     pub required: bool,
+    /// If true, a `CREATE CONSTRAINT ON (n:OwnerClass) ASSERT n.name IS UNIQUE`
+    /// was emitted when this property was declared.
+    pub unique: bool,
+    /// If set, values must be one of these strings (enum enforcement).
+    pub allowed_values: Option<Vec<String>>,
     pub default_value: Option<PropertyValue>,
     pub owner_symbol_id: String,
     pub owner_kind: OwnerKind,
@@ -142,6 +147,8 @@ impl OntologyProperty {
             name: name.to_string(),
             datatype,
             required: true,
+            unique: false,
+            allowed_values: None,
             default_value: None,
             owner_symbol_id: String::new(), // resolved during seed
             owner_kind: OwnerKind::Class,

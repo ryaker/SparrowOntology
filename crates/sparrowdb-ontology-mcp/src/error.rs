@@ -142,6 +142,17 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
+        SoError::EnumViolation { ref property, ref value, ref allowed, .. } => {
+            json!({
+                "error_kind": "EnumViolation",
+                "detail": e.to_string(),
+                "property": property,
+                "value": value,
+                "allowed_values": allowed,
+                "suggestion": format!("Value '{value}' is not in the allowed list for '{property}'. Use one of: {allowed:?}"),
+            })
+        }
+
         SoError::AlreadyInitialized => {
             json!({
                 "error_kind": "AlreadyInitialized",

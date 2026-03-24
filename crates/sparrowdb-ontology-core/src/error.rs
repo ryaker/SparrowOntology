@@ -57,6 +57,14 @@ pub enum SoError {
     #[error("Class '{class_name}' has no declared properties. Call add_property(owner='{class_name}', name='...') for each property before writing entities. Call start_here to see all unseeded_classes.")]
     UnseedeedClass { class_name: String },
 
+    #[error("Property '{property}' on '{class}' only allows values {allowed:?}, but got '{value}'. Call explain_symbol('{class}') to see declared properties.")]
+    EnumViolation {
+        class: String,
+        property: String,
+        value: String,
+        allowed: Vec<String>,
+    },
+
     #[error("Ontology already initialized. Use force=true to reset (destructive).")]
     AlreadyInitialized,
 

@@ -352,7 +352,7 @@ impl<'a> ValidationContext<'a> {
         let safe_id = escape_cypher_string(symbol_id);
         let q = format!(
             "MATCH (c:__SO_Class {{symbol_id: '{safe_id}'}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
-             RETURN p.symbol_id, p.name, p.datatype, p.required"
+             RETURN p.symbol_id, p.name, p.datatype, p.required, p.unique, p.enum_values"
         );
         let result = self.db.execute(&q)?;
         let mut props = Vec::new();
@@ -369,17 +369,30 @@ impl<'a> ValidationContext<'a> {
                 _ => continue,
             };
             let datatype = parse_property_type(&row[2]);
-            // required is stored as Int64(1/0) since storage has no Bool type
+            // required / unique stored as Int64(1/0) since storage has no Bool type
             let required = match &row[3] {
                 Value::Bool(b) => *b,
                 Value::Int64(n) => *n != 0,
                 _ => false,
+            };
+            let unique = match row.get(4) {
+                Some(Value::Bool(b)) => *b,
+                Some(Value::Int64(n)) => *n != 0,
+                _ => false,
+            };
+            let allowed_values: Option<Vec<String>> = match row.get(5) {
+                Some(Value::String(s)) if !s.is_empty() => {
+                    serde_json::from_str(s).ok()
+                }
+                _ => None,
             };
             props.push(OntologyProperty {
                 symbol_id: sym_id,
                 name,
                 datatype,
                 required,
+                unique,
+                allowed_values,
                 default_value: None,
                 owner_symbol_id: symbol_id.to_string(),
                 owner_kind: crate::model::OwnerKind::Class,
@@ -487,7 +500,8 @@ impl<'a> ValidationContext<'a> {
             .ok_or_else(|| SoError::Storage(sparrowdb_common::Error::NotFound))
     }
 
-    /// Check that `value` matches the declared `prop.datatype`.
+    /// Check that `value` matches the declared `prop.datatype` and, if
+    /// `prop.allowed_values` is set, that the value is one of those strings.
     pub fn check_type_match(
         &self,
         class_name: &str,
@@ -512,6 +526,21 @@ impl<'a> ValidationContext<'a> {
                 actual: format!("{:?}", value),
             });
         }
+
+        // Enum membership check (if allowed_values is declared)
+        if let Some(allowed) = &prop.allowed_values {
+            if let PropertyValue::String(s) = value {
+                if !allowed.contains(s) {
+                    return Err(SoError::EnumViolation {
+                        class: class_name.to_string(),
+                        property: prop.name.clone(),
+                        value: s.clone(),
+                        allowed: allowed.clone(),
+                    });
+                }
+            }
+        }
+
         Ok(())
     }
 }

@@ -114,7 +114,7 @@ fn child_property_overrides_parent_on_validate() {
     seed_test_class(&db, "emp-003", "Employee", "");
     define_subclass(&db, "Employee", "Person").unwrap();
     // Employee also declares `name` explicitly as optional — overrides Person's required `name`.
-    add_property(&db, "Employee", "name", "string", false).unwrap();
+    add_property(&db, "Employee", "name", "string", false, false, None).unwrap();
 
     let ctx = ValidationContext::new(&db);
     let empty: HashMap<String, PropertyValue> = HashMap::new();
