@@ -59,7 +59,7 @@ impl<'a> ValidationContext<'a> {
                     return Err(SoError::required_property_missing(
                         &class_symbol.canonical_name,
                         req_prop,
-                        required_props,
+                        required_props.clone(),
                     ));
                 }
             }
@@ -106,7 +106,7 @@ impl<'a> ValidationContext<'a> {
                     &rel_symbol.canonical_name,
                     &domain,
                     &source_class.canonical_name,
-                    vec![domain],
+                    vec![domain.clone()],
                 ));
             }
         }
@@ -118,7 +118,7 @@ impl<'a> ValidationContext<'a> {
                     &rel_symbol.canonical_name,
                     &range,
                     &target_class.canonical_name,
-                    vec![range],
+                    vec![range.clone()],
                 ));
             }
         }
@@ -147,8 +147,7 @@ impl<'a> ValidationContext<'a> {
 
         let result = self
             .db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
@@ -156,7 +155,7 @@ impl<'a> ValidationContext<'a> {
         let props: Vec<String> = result
             .rows
             .iter()
-            .filter_map(|row| row.get(0).and_then(|v| v.as_string()).map(|s| s.to_string()))
+            .filter_map(|row| row.get(0).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }).map(|s| s.to_string()))
             .collect();
 
         Ok(props)
@@ -175,8 +174,7 @@ impl<'a> ValidationContext<'a> {
 
         let result = self
             .db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
@@ -192,7 +190,7 @@ impl<'a> ValidationContext<'a> {
 
         let datatype_str = result.rows[0]
             .get(0)
-            .and_then(|v| v.as_string())
+            .and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None })
             .ok_or_else(|| SoError::Storage {
                 message: "Property datatype is null".to_string(),
             })?;
@@ -285,8 +283,7 @@ impl<'a> ValidationContext<'a> {
 
         let result = self
             .db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
@@ -301,7 +298,7 @@ impl<'a> ValidationContext<'a> {
 
         result.rows[0]
             .get(0)
-            .and_then(|v| v.as_string())
+            .and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None })
             .map(|s| s.to_string())
             .ok_or_else(|| SoError::Storage {
                 message: "Domain is null".to_string(),
@@ -319,8 +316,7 @@ impl<'a> ValidationContext<'a> {
 
         let result = self
             .db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
@@ -335,7 +331,7 @@ impl<'a> ValidationContext<'a> {
 
         result.rows[0]
             .get(0)
-            .and_then(|v| v.as_string())
+            .and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None })
             .map(|s| s.to_string())
             .ok_or_else(|| SoError::Storage {
                 message: "Range is null".to_string(),
@@ -359,8 +355,7 @@ pub fn is_subclass_of(db: &GraphDb, child: &str, parent: &str) -> Result<bool, S
     );
 
     let result = db
-        .begin_read()
-        .query(&query)
+        .execute(&query)
         .map_err(|e| SoError::Storage {
             message: e.to_string(),
         })?;
@@ -371,7 +366,7 @@ pub fn is_subclass_of(db: &GraphDb, child: &str, parent: &str) -> Result<bool, S
 
     result.rows[0]
         .get(0)
-        .and_then(|v| v.as_bool())
+        .and_then(|v| if let sparrowdb_execution::Value::Bool(b) = v { Some(*b) } else { None })
         .ok_or_else(|| SoError::Storage {
             message: "Query result is invalid".to_string(),
         })

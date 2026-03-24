@@ -44,8 +44,7 @@ pub fn resolve(
     );
 
     let result = db
-        .begin_read()
-        .query(&canonical_query)
+        .execute(&canonical_query)
         .map_err(|e| SoError::Storage {
             message: e.to_string(),
         })?;
@@ -54,10 +53,10 @@ pub fn resolve(
         let row = &result.rows[0];
         return Ok(ResolvedSymbol {
             canonical_name: name.to_string(),
-            symbol_id: row.get(1).and_then(|v| v.as_string()).unwrap_or_default().to_string(),
+            symbol_id: row.get(1).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }).unwrap_or_default().to_string(),
             kind,
             was_alias: false,
-            description: row.get(2).and_then(|v| v.as_string()).map(|s| s.to_string()),
+            description: row.get(2).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }).map(|s| s.to_string()),
         });
     }
 
@@ -69,8 +68,7 @@ pub fn resolve(
     );
 
     let alias_result = db
-        .begin_read()
-        .query(&alias_query)
+        .execute(&alias_query)
         .map_err(|e| SoError::Storage {
             message: e.to_string(),
         })?;
@@ -80,13 +78,13 @@ pub fn resolve(
         return Ok(ResolvedSymbol {
             canonical_name: row
                 .get(0)
-                .and_then(|v| v.as_string())
+                .and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None })
                 .unwrap_or_default()
                 .to_string(),
-            symbol_id: row.get(1).and_then(|v| v.as_string()).unwrap_or_default().to_string(),
+            symbol_id: row.get(1).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }).unwrap_or_default().to_string(),
             kind,
             was_alias: true,
-            description: row.get(2).and_then(|v| v.as_string()).map(|s| s.to_string()),
+            description: row.get(2).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }).map(|s| s.to_string()),
         });
     }
 
@@ -112,8 +110,7 @@ pub fn list_canonical_names(db: &GraphDb, kind: AliasKind) -> Result<Vec<String>
     let query = format!("MATCH (n:{}) RETURN n.name ORDER BY n.name", label);
 
     let result = db
-        .begin_read()
-        .query(&query)
+        .execute(&query)
         .map_err(|e| SoError::Storage {
             message: e.to_string(),
         })?;
@@ -123,7 +120,7 @@ pub fn list_canonical_names(db: &GraphDb, kind: AliasKind) -> Result<Vec<String>
         .iter()
         .filter_map(|row| {
             row.get(0)
-                .and_then(|v| v.as_string())
+                .and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None })
                 .map(|s| s.to_string())
         })
         .collect();

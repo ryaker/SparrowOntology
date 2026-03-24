@@ -22,46 +22,42 @@ pub struct InitResult {
 /// - If `force=true`, wipes all __SO_* nodes and reinitializes
 ///
 /// Seeds the canonical world model: 10 classes, 19 relations, 22 properties.
-///
-/// All writes use `db.begin_write()` (awaiting SPA-208 for `begin_write_privileged()`).
 pub fn init(db: &GraphDb, force: bool) -> Result<InitResult, SoError> {
-    let tx = db.begin_read();
-
     // Check if already initialized
     let check_query = format!("MATCH (n:{}) RETURN count(n) as count", CLASS_LABEL);
-    let check_result = tx
-        .query(&check_query)
+    let check_result = db
+        .execute(&check_query)
         .map_err(|e| SoError::Storage {
             message: e.to_string(),
         })?;
 
     let existing_count = check_result.rows[0]
         .get(0)
-        .and_then(|v| v.as_int64())
+        .and_then(|v| if let sparrowdb_execution::Value::Int64(i) = v { Some(*i) } else { None })
         .unwrap_or(0) as usize;
 
     if existing_count > 0 && !force {
         // Already initialized — get counts for error message
         let rel_query = format!("MATCH (n:{}) RETURN count(n) as count", RELATION_LABEL);
-        let rel_result = tx
-            .query(&rel_query)
+        let rel_result = db
+            .execute(&rel_query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
         let rel_count = rel_result.rows[0]
             .get(0)
-            .and_then(|v| v.as_int64())
+            .and_then(|v| if let sparrowdb_execution::Value::Int64(i) = v { Some(*i) } else { None })
             .unwrap_or(0) as usize;
 
         let prop_query = format!("MATCH (n:{}) RETURN count(n) as count", PROPERTY_LABEL);
-        let prop_result = tx
-            .query(&prop_query)
+        let prop_result = db
+            .execute(&prop_query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
         let prop_count = prop_result.rows[0]
             .get(0)
-            .and_then(|v| v.as_int64())
+            .and_then(|v| if let sparrowdb_execution::Value::Int64(i) = v { Some(*i) } else { None })
             .unwrap_or(0) as usize;
 
         return Err(SoError::AlreadyInitialized {
@@ -73,21 +69,12 @@ pub fn init(db: &GraphDb, force: bool) -> Result<InitResult, SoError> {
 
     // If force=true, wipe all existing __SO_* nodes
     if force && existing_count > 0 {
-        let mut wipe_tx = db.begin_write().map_err(|e| SoError::Storage {
-            message: e.to_string(),
-        })?;
-
-        // TODO SPA-208: Use begin_write_privileged() when available
         for label in RESERVED_LABELS {
             let delete_query = format!("MATCH (n:{}) DETACH DELETE n", label);
-            wipe_tx.execute(&delete_query).map_err(|e| SoError::Storage {
+            db.execute(&delete_query).map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
         }
-
-        wipe_tx.commit().map_err(|e| SoError::Storage {
-            message: e.to_string(),
-        })?;
     }
 
     // Get canonical world model
@@ -95,30 +82,20 @@ pub fn init(db: &GraphDb, force: bool) -> Result<InitResult, SoError> {
     let relations = canonical_world_model_relations();
     let properties = canonical_world_model_properties();
 
-    let mut write_tx = db.begin_write().map_err(|e| SoError::Storage {
-        message: e.to_string(),
-    })?;
-
-    // TODO SPA-208: Use begin_write_privileged() when this becomes available
-
     // Seed classes
     for class in &classes {
-        seed_class(&mut write_tx, class)?;
+        seed_class(db, class)?;
     }
 
     // Seed relations with their domain and range edges
     for relation in &relations {
-        seed_relation(&mut write_tx, relation)?;
+        seed_relation(db, relation)?;
     }
 
     // Seed properties
     for property in &properties {
-        seed_property(&mut write_tx, property)?;
+        seed_property(db, property)?;
     }
-
-    write_tx.commit().map_err(|e| SoError::Storage {
-        message: e.to_string(),
-    })?;
 
     Ok(InitResult {
         classes_created: classes.len(),
@@ -128,7 +105,7 @@ pub fn init(db: &GraphDb, force: bool) -> Result<InitResult, SoError> {
 }
 
 /// Create a __SO_Class node for the given class.
-fn seed_class(tx: &mut sparrowdb::WriteTx, class: &OntologyClass) -> Result<(), SoError> {
+fn seed_class(db: &GraphDb, class: &OntologyClass) -> Result<(), SoError> {
     let escaped_name = escape_cypher_string(&class.name);
     let description_clause = if let Some(desc) = &class.description {
         let escaped_desc = escape_cypher_string(desc);
@@ -142,14 +119,16 @@ fn seed_class(tx: &mut sparrowdb::WriteTx, class: &OntologyClass) -> Result<(), 
         CLASS_LABEL, escaped_name, class.symbol_id, description_clause
     );
 
-    tx.execute(&create_query)
+    db.execute(&create_query)
         .map_err(|e| SoError::Storage {
             message: e.to_string(),
-        })
+        })?;
+
+    Ok(())
 }
 
 /// Create a __SO_Relation node and its domain/range edges.
-fn seed_relation(tx: &mut sparrowdb::WriteTx, relation: &OntologyRelation) -> Result<(), SoError> {
+fn seed_relation(db: &GraphDb, relation: &OntologyRelation) -> Result<(), SoError> {
     let escaped_name = escape_cypher_string(&relation.name);
     let escaped_domain = escape_cypher_string(&relation.domain);
     let escaped_range = escape_cypher_string(&relation.range);
@@ -167,7 +146,7 @@ fn seed_relation(tx: &mut sparrowdb::WriteTx, relation: &OntologyRelation) -> Re
         RELATION_LABEL, escaped_name, relation.symbol_id, description_clause
     );
 
-    tx.execute(&rel_query).map_err(|e| SoError::Storage {
+    db.execute(&rel_query).map_err(|e| SoError::Storage {
         message: e.to_string(),
     })?;
 
@@ -178,7 +157,7 @@ fn seed_relation(tx: &mut sparrowdb::WriteTx, relation: &OntologyRelation) -> Re
         RELATION_LABEL, escaped_name, CLASS_LABEL, escaped_domain, DOMAIN
     );
 
-    tx.execute(&domain_query).map_err(|e| SoError::Storage {
+    db.execute(&domain_query).map_err(|e| SoError::Storage {
         message: e.to_string(),
     })?;
 
@@ -189,7 +168,7 @@ fn seed_relation(tx: &mut sparrowdb::WriteTx, relation: &OntologyRelation) -> Re
         RELATION_LABEL, escaped_name, CLASS_LABEL, escaped_range, RANGE
     );
 
-    tx.execute(&range_query).map_err(|e| SoError::Storage {
+    db.execute(&range_query).map_err(|e| SoError::Storage {
         message: e.to_string(),
     })?;
 
@@ -197,7 +176,7 @@ fn seed_relation(tx: &mut sparrowdb::WriteTx, relation: &OntologyRelation) -> Re
 }
 
 /// Create a __SO_Property node and link it to its owner.
-fn seed_property(tx: &mut sparrowdb::WriteTx, property: &OntologyProperty) -> Result<(), SoError> {
+fn seed_property(db: &GraphDb, property: &OntologyProperty) -> Result<(), SoError> {
     let escaped_name = escape_cypher_string(&property.name);
     let escaped_owner = escape_cypher_string(&property.owner);
     let datatype_str = property.datatype.to_string();
@@ -219,7 +198,7 @@ fn seed_property(tx: &mut sparrowdb::WriteTx, property: &OntologyProperty) -> Re
         description_clause
     );
 
-    tx.execute(&create_query).map_err(|e| SoError::Storage {
+    db.execute(&create_query).map_err(|e| SoError::Storage {
         message: e.to_string(),
     })?;
 
@@ -236,7 +215,7 @@ fn seed_property(tx: &mut sparrowdb::WriteTx, property: &OntologyProperty) -> Re
         PROPERTY_LABEL, escaped_name, owner_label, escaped_owner, PROPERTY_OF
     );
 
-    tx.execute(&link_query).map_err(|e| SoError::Storage {
+    db.execute(&link_query).map_err(|e| SoError::Storage {
         message: e.to_string(),
     })?;
 

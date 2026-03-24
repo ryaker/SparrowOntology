@@ -55,7 +55,7 @@ impl std::fmt::Display for PropertyType {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum PropertyValue {
     String(String),
     Integer(i64),

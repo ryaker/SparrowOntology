@@ -45,14 +45,13 @@ pub fn expand_subclasses(
         );
 
         let query_result = db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
 
         for row in &query_result.rows {
-            if let Some(subclass_name) = row.get(0).and_then(|v| v.as_string()) {
+            if let Some(subclass_name) = row.get(0).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }) {
                 let subclass_str = subclass_name.to_string();
                 if !visited.contains(&subclass_str) {
                     visited.insert(subclass_str.clone());
@@ -102,14 +101,13 @@ pub fn expand_subproperties(
         );
 
         let query_result = db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
 
         for row in &query_result.rows {
-            if let Some(subprop_name) = row.get(0).and_then(|v| v.as_string()) {
+            if let Some(subprop_name) = row.get(0).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }) {
                 let subprop_str = subprop_name.to_string();
                 if !visited.contains(&subprop_str) {
                     visited.insert(subprop_str.clone());
@@ -184,14 +182,13 @@ pub fn check_no_cycle(
         };
 
         let result = db
-            .begin_read()
-            .query(&query)
+            .execute(&query)
             .map_err(|e| SoError::Storage {
                 message: e.to_string(),
             })?;
 
         for row in &result.rows {
-            if let Some(ancestor_name) = row.get(0).and_then(|v| v.as_string()) {
+            if let Some(ancestor_name) = row.get(0).and_then(|v| if let sparrowdb_execution::Value::String(s) = v { Some(s.as_str()) } else { None }) {
                 let ancestor_str = ancestor_name.to_string();
                 if !visited.contains(&ancestor_str) {
                     stack.push(ancestor_str);
