@@ -359,64 +359,6 @@ impl<'a> ValidationContext<'a> {
     }
 }
 
-// ── Full-graph validation scan (stubbed — SPA-209 required for db.labels()) ──
-
-/// Full-graph validation report.
-pub struct ValidationReport {
-    pub violations: Vec<ValidationViolation>,
-    pub warnings: Vec<ValidationWarning>,
-    pub stats: ValidationStats,
-}
-
-pub struct ValidationViolation {
-    pub kind: ViolationKind,
-    pub node_id: Option<String>,
-    pub edge_id: Option<String>,
-    pub message: String,
-    pub suggestion: Option<String>,
-}
-
-pub struct ValidationWarning {
-    pub message: String,
-}
-
-pub enum ViolationKind {
-    UnknownClass,
-    UnknownRelationType,
-    DomainViolation,
-    RangeViolation,
-    RequiredPropertyMissing,
-    TypeMismatch,
-    ReservedNamespaceCorruption,
-}
-
-pub struct ValidationStats {
-    pub nodes_scanned: u64,
-    pub edges_scanned: u64,
-    pub violations_found: u64,
-    pub warnings_found: u64,
-    pub duration_ms: u64,
-}
-
-/// Full-graph validation scan.
-///
-/// TODO SPA-209: Full implementation requires `db.labels()` and
-/// `db.relationship_types()` which are not yet available.
-/// Returns an empty report (no violations) until SPA-209 ships.
-pub fn validate(_db: &GraphDb) -> Result<ValidationReport, SoError> {
-    Ok(ValidationReport {
-        violations: Vec::new(),
-        warnings: Vec::new(),
-        stats: ValidationStats {
-            nodes_scanned: 0,
-            edges_scanned: 0,
-            violations_found: 0,
-            warnings_found: 0,
-            duration_ms: 0,
-        },
-    })
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn parse_property_type(v: &Value) -> PropertyType {
