@@ -22,6 +22,17 @@ fn escape_cypher_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
 
+/// SparrowDB stores user-facing property names as `col_<fnv1a32>` column keys.
+/// WHERE clauses must use the column key, not the original property name.
+fn prop_name_to_col(name: &str) -> String {
+    let mut hash: u32 = 2166136261u32;
+    for byte in name.bytes() {
+        hash ^= byte as u32;
+        hash = hash.wrapping_mul(16777619);
+    }
+    format!("col_{hash}")
+}
+
 // ── Execute-or-empty helper ───────────────────────────────────────────────────
 
 fn execute_or_empty(db: &GraphDb, q: &str) -> Result<sparrowdb_execution::QueryResult, Value> {
@@ -224,6 +235,7 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
         .as_str()
         .or_else(|| args["rel_type"].as_str())
         .ok_or_else(|| mcp_error(-32602, "Missing required param: relation_name", json!({})))?;
+    let preserve_source_terms = args["preserve_source_terms"].as_bool().unwrap_or(false);
     let to_id_str = args["to_id"]
         .as_str()
         .ok_or_else(|| mcp_error(-32602, "Missing required param: to_id", json!({})))?;
@@ -256,6 +268,14 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
         for (k, v) in obj {
             edge_props.insert(k.clone(), json_to_property_value(v));
         }
+    }
+
+    // Step 5b: optionally inject __so_source_rel
+    if preserve_source_terms && rel_resolved.was_alias {
+        edge_props.insert(
+            "__so_source_rel".to_string(),
+            PropertyValue::String(rel_resolved.original_name.clone()),
+        );
     }
 
     // Write edge using WriteTx::create_edge (Cypher MATCH+CREATE can't filter by id())
@@ -402,40 +422,16 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
         vec![canonical.clone()]
     };
 
-    // Step 3: build WHERE clause from "filters" parameter
-    // Note: backtick quoting not supported by engine — use plain property names.
-    // For multi-label subclass expansion, run per-label queries and merge.
-    let mut where_clauses: Vec<String> = Vec::new();
+    // Step 3: build property filter map for post-query Rust filtering.
+    // SparrowDB's Cypher engine does not support property filtering in WHERE clauses —
+    // it ignores unknown property keys silently. Properties are stored and returned
+    // with col_<fnv1a32(name)> keys, but WHERE n.col_X = V is also not supported.
+    // Filter in Rust post-query by comparing against the col_ keys in the returned map.
+    let filter_obj: Option<HashMap<String, Value>> =
+        args["filters"].as_object().or_else(|| args["where"].as_object())
+            .map(|obj| obj.iter().map(|(k, v)| (prop_name_to_col(k), v.clone())).collect());
 
-    // Add property equality filters from "filters" object
-    if let Some(obj) = args["filters"].as_object() {
-        for (k, v) in obj {
-            let safe_key = escape_cypher_string(k);
-            match v {
-                Value::String(s) => {
-                    let safe_val = escape_cypher_string(s);
-                    where_clauses.push(format!("n.{safe_key} = '{safe_val}'"));
-                }
-                Value::Number(n) => {
-                    if let Some(i) = n.as_i64() {
-                        where_clauses.push(format!("n.{safe_key} = {i}"));
-                    } else if let Some(f) = n.as_f64() {
-                        where_clauses.push(format!("n.{safe_key} = {f}"));
-                    }
-                }
-                Value::Bool(b) => {
-                    where_clauses.push(format!("n.{safe_key} = {b}"));
-                }
-                _ => {}
-            }
-        }
-    }
-
-    let where_str = if where_clauses.is_empty() {
-        String::new()
-    } else {
-        format!(" WHERE {}", where_clauses.join(" AND "))
-    };
+    let where_str = String::new();
 
     // Step 4: build query — run once per label and merge (avoids labels(n)[0] subscript)
     // The engine doesn't support subscript indexing on labels(n).
@@ -496,8 +492,19 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
         }
     }
 
-    // Apply limit/offset after dedup
-    let entities: Vec<_> = entities.into_iter().skip(offset).take(limit).collect();
+    // Apply property filters in Rust (Cypher WHERE doesn't support SparrowDB col_ keys).
+    // filter_obj keys are already col_<fnv1a32> translated.
+    let entities: Vec<_> = if let Some(ref filters) = filter_obj {
+        entities.into_iter().filter(|e| {
+            filters.iter().all(|(col_key, expected)| {
+                e["properties"].get(col_key)
+                    .map(|actual| actual == expected)
+                    .unwrap_or(false)
+            })
+        }).skip(offset).take(limit).collect()
+    } else {
+        entities.into_iter().skip(offset).take(limit).collect()
+    };
 
     // Step 6: return
     Ok(json!({
