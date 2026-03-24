@@ -14,13 +14,6 @@ use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp};
 
-// ── Cypher string escaping ────────────────────────────────────────────────────
-
-/// Local copy: escape user-supplied strings for Cypher interpolation.
-fn escape_cypher_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'")
-}
-
 // ── Storage value helpers ─────────────────────────────────────────────────────
 
 fn sv(s: &str) -> StoreValue {
@@ -55,6 +48,26 @@ fn now_ms() -> i64 {
 /// Execute a query, treating "unknown label" / "unknown relationship type" as an empty result.
 fn execute_or_empty(db: &GraphDb, q: &str) -> Result<sparrowdb_execution::QueryResult, Value> {
     match db.execute(q) {
+        Ok(r) => Ok(r),
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+            if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
+        {
+            Ok(sparrowdb_execution::QueryResult::empty(vec![]))
+        }
+        Err(e) => Err(mcp_error(
+            -32603,
+            "Database error",
+            json!({"detail": e.to_string()}),
+        )),
+    }
+}
+
+fn execute_params_or_empty(
+    db: &GraphDb,
+    q: &str,
+    params: HashMap<String, ExecValue>,
+) -> Result<sparrowdb_execution::QueryResult, Value> {
+    match db.execute_with_params(q, params) {
         Ok(r) => Ok(r),
         Err(sparrowdb_common::Error::InvalidArgument(ref msg))
             if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
@@ -702,11 +715,11 @@ fn check_no_subproperty_cycle(db: &GraphDb, child: &str, parent: &str) -> Result
         }
         let mut next = Vec::new();
         for name in &frontier {
-            let safe = escape_cypher_string(name);
             let q = format!(
-                "MATCH (n:{RELATION_LABEL} {{name: '{safe}'}})-[:{SUBPROPERTY_OF_REL}]->(p:{RELATION_LABEL}) RETURN p.name"
+                "MATCH (n:{RELATION_LABEL} {{name: $nname}})-[:{SUBPROPERTY_OF_REL}]->(p:{RELATION_LABEL}) RETURN p.name"
             );
-            let result = match db.execute(&q) {
+            let p = HashMap::from([("nname".to_string(), ExecValue::String(name.clone()))]);
+            let result = match db.execute_with_params(&q, p) {
                 Ok(r) => r,
                 Err(sparrowdb_common::Error::InvalidArgument(ref msg))
                     if msg.contains("unknown label")
@@ -861,17 +874,19 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
 fn get_aliases_for(db: &GraphDb, canonical_name: &str, kind_str: &str) -> Result<Vec<String>, Value> {
-    let safe_name = escape_cypher_string(canonical_name);
-    let safe_kind = escape_cypher_string(kind_str);
-    let label = match kind_str {
-        "relation" => RELATION_LABEL,
-        _ => CLASS_LABEL,
-    };
+    let target_label = if kind_str == "relation" { RELATION_LABEL } else { CLASS_LABEL };
     let q = format!(
-        "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(c:{label} {{name: '{safe_name}'}}) \
-         WHERE a.kind = '{safe_kind}' RETURN a.name"
+        "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(c:{target_label} {{name: $cname}}) \
+         WHERE a.kind = $kind RETURN a.name"
     );
-    let result = execute_or_empty(db, &q)?;
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([
+            ("cname".to_string(), ExecValue::String(canonical_name.to_string())),
+            ("kind".to_string(), ExecValue::String(kind_str.to_string())),
+        ]),
+    )?;
     let mut names = Vec::new();
     for row in &result.rows {
         if let Some(ExecValue::String(s)) = row.first() {
@@ -882,11 +897,14 @@ fn get_aliases_for(db: &GraphDb, canonical_name: &str, kind_str: &str) -> Result
 }
 
 fn get_direct_subclasses(db: &GraphDb, class_name: &str) -> Result<Vec<String>, Value> {
-    let safe = escape_cypher_string(class_name);
     let q = format!(
-        "MATCH (sub:{CLASS_LABEL})-[:{SUBCLASS_OF_REL}]->(base:{CLASS_LABEL} {{name: '{safe}'}}) RETURN sub.name"
+        "MATCH (sub:{CLASS_LABEL})-[:{SUBCLASS_OF_REL}]->(base:{CLASS_LABEL} {{name: $cname}}) RETURN sub.name"
     );
-    let result = execute_or_empty(db, &q)?;
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([("cname".to_string(), ExecValue::String(class_name.to_string()))]),
+    )?;
     let mut names = Vec::new();
     for row in &result.rows {
         if let Some(ExecValue::String(s)) = row.first() {
@@ -897,11 +915,14 @@ fn get_direct_subclasses(db: &GraphDb, class_name: &str) -> Result<Vec<String>, 
 }
 
 fn get_direct_subproperties(db: &GraphDb, rel_name: &str) -> Result<Vec<String>, Value> {
-    let safe = escape_cypher_string(rel_name);
     let q = format!(
-        "MATCH (sub:{RELATION_LABEL})-[:{SUBPROPERTY_OF_REL}]->(base:{RELATION_LABEL} {{name: '{safe}'}}) RETURN sub.name"
+        "MATCH (sub:{RELATION_LABEL})-[:{SUBPROPERTY_OF_REL}]->(base:{RELATION_LABEL} {{name: $rname}}) RETURN sub.name"
     );
-    let result = execute_or_empty(db, &q)?;
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([("rname".to_string(), ExecValue::String(rel_name.to_string()))]),
+    )?;
     let mut names = Vec::new();
     for row in &result.rows {
         if let Some(ExecValue::String(s)) = row.first() {
@@ -912,11 +933,14 @@ fn get_direct_subproperties(db: &GraphDb, rel_name: &str) -> Result<Vec<String>,
 }
 
 fn get_domain_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String>, Value> {
-    let safe = escape_cypher_string(rel_name);
     let q = format!(
-        "MATCH (r:{RELATION_LABEL} {{name: '{safe}'}})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) RETURN c.name"
+        "MATCH (r:{RELATION_LABEL} {{name: $rname}})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) RETURN c.name"
     );
-    let result = execute_or_empty(db, &q)?;
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([("rname".to_string(), ExecValue::String(rel_name.to_string()))]),
+    )?;
     Ok(result
         .rows
         .first()
@@ -925,11 +949,14 @@ fn get_domain_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String
 }
 
 fn get_range_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String>, Value> {
-    let safe = escape_cypher_string(rel_name);
     let q = format!(
-        "MATCH (r:{RELATION_LABEL} {{name: '{safe}'}})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) RETURN c.name"
+        "MATCH (r:{RELATION_LABEL} {{name: $rname}})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) RETURN c.name"
     );
-    let result = execute_or_empty(db, &q)?;
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([("rname".to_string(), ExecValue::String(rel_name.to_string()))]),
+    )?;
     Ok(result
         .rows
         .first()
@@ -938,12 +965,15 @@ fn get_range_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String>
 }
 
 fn get_properties_for_class(db: &GraphDb, class_symbol_id: &str) -> Result<Vec<Value>, Value> {
-    let safe_sid = escape_cypher_string(class_symbol_id);
     let q = format!(
-        "MATCH (c:{CLASS_LABEL} {{symbol_id: '{safe_sid}'}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
+        "MATCH (c:{CLASS_LABEL} {{symbol_id: $sid}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
          RETURN p.name, p.datatype, p.required"
     );
-    let result = execute_or_empty(db, &q)?;
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([("sid".to_string(), ExecValue::String(class_symbol_id.to_string()))]),
+    )?;
     let mut props = Vec::new();
     for row in &result.rows {
         props.push(json!({
@@ -960,9 +990,12 @@ fn get_node_id_by_symbol_id(
     label: &str,
     symbol_id: &str,
 ) -> Result<NodeId, Value> {
-    let safe_sid = escape_cypher_string(symbol_id);
-    let q = format!("MATCH (n:{label} {{symbol_id: '{safe_sid}'}}) RETURN id(n)");
-    let result = execute_or_empty(db, &q)?;
+    let q = format!("MATCH (n:{label} {{symbol_id: $sid}}) RETURN id(n)");
+    let result = execute_params_or_empty(
+        db,
+        &q,
+        HashMap::from([("sid".to_string(), ExecValue::String(symbol_id.to_string()))]),
+    )?;
     result
         .rows
         .first()
@@ -1153,8 +1186,7 @@ pub fn stats(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
     let mut by_class = serde_json::Map::new();
 
     for class_name in &all_class_names {
-        let escaped = escape_cypher_string(class_name);
-        let q = format!("MATCH (n:{escaped}) RETURN count(n)");
+        let q = format!("MATCH (n:{class_name}) RETURN count(n)");
         let count = match db.execute(&q) {
             Ok(r) => r
                 .rows

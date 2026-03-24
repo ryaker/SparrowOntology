@@ -1,12 +1,169 @@
 use std::collections::HashMap;
 
+use serde::Serialize;
 use sparrowdb::GraphDb;
 use sparrowdb_execution::Value;
 
 use crate::error::SoError;
 use crate::model::{AliasKind, OntologyProperty, PropertyType, PropertyValue};
-use crate::namespace::{DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL, RANGE_REL};
+use crate::namespace::{
+    CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL, RANGE_REL, RELATION_LABEL,
+    SO_NAMESPACE,
+};
 use crate::resolution::{escape_cypher_string, resolve, ResolvedSymbol};
+
+// ── Full-graph ValidationReport types ────────────────────────────────────────
+
+#[derive(Debug, Serialize)]
+pub struct ValidationReport {
+    pub violations: Vec<ValidationViolation>,
+    pub warnings: Vec<ValidationWarning>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ValidationViolation {
+    pub kind: ViolationKind,
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub struct ValidationWarning {
+    pub message: String,
+}
+
+#[derive(Debug, Serialize)]
+pub enum ViolationKind {
+    UnknownClass,
+    MissingDomainEdge,
+    MissingRangeEdge,
+    OrphanedProperty,
+}
+
+// ── Full-graph validate() ─────────────────────────────────────────────────────
+
+/// Scan the entire graph and report ontology violations.
+///
+/// Uses `db.labels()` (SparrowDB 0.1.2) to enumerate all node labels, then
+/// checks that every user-defined label has a corresponding `__SO_Class` node.
+/// Also verifies that every `__SO_Relation` has both a `__SO_DOMAIN` and a
+/// `__SO_RANGE` edge.
+pub fn validate(db: &GraphDb) -> Result<ValidationReport, SoError> {
+    let mut violations: Vec<ValidationViolation> = Vec::new();
+    let warnings: Vec<ValidationWarning> = Vec::new();
+
+    // ── Step 1: Relation integrity — every __SO_Relation needs DOMAIN + RANGE ──
+    {
+        let q = format!("MATCH (r:{RELATION_LABEL}) RETURN r.name, r.symbol_id");
+        let result = match db.execute(&q) {
+            Ok(r) => r,
+            Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
+            {
+                sparrowdb_execution::QueryResult::empty(vec![])
+            }
+            Err(e) => return Err(SoError::Storage(e)),
+        };
+
+        for row in &result.rows {
+            let rel_name = match row.first() {
+                Some(Value::String(s)) => s.clone(),
+                _ => continue,
+            };
+            let rel_sid = match row.get(1) {
+                Some(Value::String(s)) => s.clone(),
+                _ => continue,
+            };
+            let safe_sid = escape_cypher_string(&rel_sid);
+
+            // Check DOMAIN
+            let domain_q = format!(
+                "MATCH (r:{RELATION_LABEL} {{symbol_id: '{safe_sid}'}})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) \
+                 RETURN c.name"
+            );
+            let has_domain = match db.execute(&domain_q) {
+                Ok(r) => !r.rows.is_empty(),
+                Err(_) => false,
+            };
+            if !has_domain {
+                violations.push(ValidationViolation {
+                    kind: ViolationKind::MissingDomainEdge,
+                    message: format!("Relation '{}' has no DOMAIN edge", rel_name),
+                });
+            }
+
+            // Check RANGE
+            let range_q = format!(
+                "MATCH (r:{RELATION_LABEL} {{symbol_id: '{safe_sid}'}})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) \
+                 RETURN c.name"
+            );
+            let has_range = match db.execute(&range_q) {
+                Ok(r) => !r.rows.is_empty(),
+                Err(_) => false,
+            };
+            if !has_range {
+                violations.push(ValidationViolation {
+                    kind: ViolationKind::MissingRangeEdge,
+                    message: format!("Relation '{}' has no RANGE edge", rel_name),
+                });
+            }
+        }
+    }
+
+    // ── Step 2: Label scan — every user label must map to a known __SO_Class ──
+    {
+        // Collect all known canonical class names
+        let known_classes: std::collections::HashSet<String> = {
+            let q = format!("MATCH (c:{CLASS_LABEL}) RETURN c.name");
+            let result = match db.execute(&q) {
+                Ok(r) => r,
+                Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+                    if msg.contains("unknown label")
+                        || msg.contains("unknown relationship type") =>
+                {
+                    sparrowdb_execution::QueryResult::empty(vec![])
+                }
+                Err(e) => return Err(SoError::Storage(e)),
+            };
+            result
+                .rows
+                .iter()
+                .filter_map(|row| row.first())
+                .filter_map(|v| {
+                    if let Value::String(s) = v {
+                        Some(s.clone())
+                    } else {
+                        None
+                    }
+                })
+                .collect()
+        };
+
+        // Use db.labels() — the new SparrowDB 0.1.2 API
+        let all_labels: Vec<String> = db.labels().map_err(SoError::Storage)?;
+
+        for label in &all_labels {
+            // Skip all __SO_ internal labels
+            if label.starts_with(SO_NAMESPACE) {
+                continue;
+            }
+            // If not in known_classes, it is an unregistered label
+            if !known_classes.contains(label) {
+                violations.push(ValidationViolation {
+                    kind: ViolationKind::UnknownClass,
+                    message: format!(
+                        "Label '{}' is not a known class in the ontology",
+                        label
+                    ),
+                });
+            }
+        }
+    }
+
+    Ok(ValidationReport {
+        violations,
+        warnings,
+    })
+}
 
 /// Provenance properties that callers ARE allowed to set.
 const ALLOWED_SO_KEYS: &[&str] = &["__so_source_label", "__so_source_rel"];

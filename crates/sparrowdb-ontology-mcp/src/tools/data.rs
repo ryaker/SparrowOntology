@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::time::Instant;
 
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
@@ -16,12 +15,6 @@ use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp, so_error_to_mcp_error};
 
-// ── Cypher string escaping ────────────────────────────────────────────────────
-
-fn escape_cypher_string(s: &str) -> String {
-    s.replace('\\', "\\\\").replace('\'', "\\'")
-}
-
 /// SparrowDB stores user-facing property names as `col_<fnv1a32>` column keys.
 /// WHERE clauses must use the column key, not the original property name.
 fn prop_name_to_col(name: &str) -> String {
@@ -37,6 +30,26 @@ fn prop_name_to_col(name: &str) -> String {
 
 fn execute_or_empty(db: &GraphDb, q: &str) -> Result<sparrowdb_execution::QueryResult, Value> {
     match db.execute(q) {
+        Ok(r) => Ok(r),
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
+            if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
+        {
+            Ok(sparrowdb_execution::QueryResult::empty(vec![]))
+        }
+        Err(e) => Err(mcp_error(
+            -32603,
+            "Database error",
+            json!({"detail": e.to_string()}),
+        )),
+    }
+}
+
+fn execute_params_or_empty(
+    db: &GraphDb,
+    q: &str,
+    params: HashMap<String, ExecValue>,
+) -> Result<sparrowdb_execution::QueryResult, Value> {
+    match db.execute_with_params(q, params) {
         Ok(r) => Ok(r),
         Err(sparrowdb_common::Error::InvalidArgument(ref msg))
             if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
@@ -440,9 +453,8 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
     let labels_to_query: Vec<String> = class_names.clone();
 
     for lbl in &labels_to_query {
-        let safe_lbl = escape_cypher_string(lbl);
         let q = format!(
-            "MATCH (n:{safe_lbl}){where_str} RETURN id(n), labels(n), n SKIP {offset} LIMIT {limit}"
+            "MATCH (n:{lbl}){where_str} RETURN id(n), labels(n), n SKIP {offset} LIMIT {limit}"
         );
         let result = execute_or_empty(db, &q)?;
         for row in &result.rows {
@@ -543,42 +555,48 @@ fn explain_class(db: &GraphDb, name: &str) -> Result<Value, Value> {
     let resolved = resolve(db, name, AliasKind::Class)
         .map_err(|e| so_error_to_mcp_error(-32602, "Resolution failed", &e))?;
     let canonical = &resolved.canonical_name;
-    let safe_c = escape_cypher_string(canonical);
 
     // Step 2: aliases
-    let aliases = query_string_list(
+    let aliases = query_string_list_params(
         db,
         &format!(
-            "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(c:{CLASS_LABEL} {{name: '{safe_c}'}}) \
+            "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(c:{CLASS_LABEL} {{name: $cname}}) \
              RETURN a.name"
         ),
+        HashMap::from([("cname".to_string(), ExecValue::String(canonical.clone()))]),
     )?;
 
     // Step 3: direct subclasses
-    let subclasses = query_string_list(
+    let subclasses = query_string_list_params(
         db,
         &format!(
-            "MATCH (sub:{CLASS_LABEL})-[:{SUBCLASS_OF_REL}]->(c:{CLASS_LABEL} {{name: '{safe_c}'}}) \
+            "MATCH (sub:{CLASS_LABEL})-[:{SUBCLASS_OF_REL}]->(c:{CLASS_LABEL} {{name: $cname}}) \
              RETURN sub.name"
         ),
+        HashMap::from([("cname".to_string(), ExecValue::String(canonical.clone()))]),
     )?;
 
     // Step 4: parent classes
-    let parent_classes = query_string_list(
+    let parent_classes = query_string_list_params(
         db,
         &format!(
-            "MATCH (c:{CLASS_LABEL} {{name: '{safe_c}'}})-[:{SUBCLASS_OF_REL}]->(p:{CLASS_LABEL}) \
+            "MATCH (c:{CLASS_LABEL} {{name: $cname}})-[:{SUBCLASS_OF_REL}]->(p:{CLASS_LABEL}) \
              RETURN p.name"
         ),
+        HashMap::from([("cname".to_string(), ExecValue::String(canonical.clone()))]),
     )?;
 
     // Step 5: properties via HAS_PROPERTY
     let properties = {
         let q = format!(
-            "MATCH (c:{CLASS_LABEL} {{name: '{safe_c}'}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
+            "MATCH (c:{CLASS_LABEL} {{name: $cname}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
              RETURN p.name, p.datatype, p.required"
         );
-        let result = execute_or_empty(db, &q)?;
+        let result = execute_params_or_empty(
+            db,
+            &q,
+            HashMap::from([("cname".to_string(), ExecValue::String(canonical.clone()))]),
+        )?;
         let mut out = Vec::new();
         for row in &result.rows {
             out.push(json!({
@@ -591,34 +609,36 @@ fn explain_class(db: &GraphDb, name: &str) -> Result<Value, Value> {
     };
 
     // Step 6: valid_relations_as_source (DOMAIN edge points to this class or its subclasses)
+    // Note: IN $param is not supported for list parameters in SparrowDB Cypher — class names
+    // come from expand_subclasses (DB-derived, not user input) so inline interpolation is safe.
     let all_class_names = expand_subclasses(db, canonical, 20)
         .map_err(|e| mcp_error(-32603, "Subclass expansion failed", so_error_to_mcp(&e)))?;
-    let class_list: Vec<String> = all_class_names
+    let class_list_literal = all_class_names
         .iter()
-        .map(|n| format!("'{}'", escape_cypher_string(n)))
-        .collect();
-    let class_list_str = class_list.join(", ");
+        .map(|n| format!("'{}'", n.replace('\'', "\\'")))
+        .collect::<Vec<_>>()
+        .join(", ");
 
-    let valid_relations_as_source = query_string_list(
-        db,
-        &format!(
+    let valid_relations_as_source = {
+        let q = format!(
             "MATCH (r:{RELATION_LABEL})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) \
-             WHERE c.name IN [{class_list_str}] RETURN r.name"
-        ),
-    )?;
+             WHERE c.name IN [{class_list_literal}] RETURN r.name"
+        );
+        query_string_list_params(db, &q, HashMap::new())?
+    };
 
     // Step 7: valid_relations_as_target (RANGE edge)
-    let valid_relations_as_target = query_string_list(
-        db,
-        &format!(
+    let valid_relations_as_target = {
+        let q = format!(
             "MATCH (r:{RELATION_LABEL})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) \
-             WHERE c.name IN [{class_list_str}] RETURN r.name"
-        ),
-    )?;
+             WHERE c.name IN [{class_list_literal}] RETURN r.name"
+        );
+        query_string_list_params(db, &q, HashMap::new())?
+    };
 
     // Step 8: instance count
     let instance_count = {
-        let q = format!("MATCH (n:{safe_c}) RETURN count(n)");
+        let q = format!("MATCH (n:{canonical}) RETURN count(n)");
         match db.execute(&q) {
             Ok(r) => r
                 .rows
@@ -658,24 +678,25 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
     let resolved = resolve(db, name, AliasKind::Relation)
         .map_err(|e| so_error_to_mcp_error(-32602, "Resolution failed", &e))?;
     let canonical = &resolved.canonical_name;
-    let safe_r = escape_cypher_string(canonical);
 
     // Step 2: aliases
-    let aliases = query_string_list(
+    let aliases = query_string_list_params(
         db,
         &format!(
-            "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(r:{RELATION_LABEL} {{name: '{safe_r}'}}) \
+            "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(r:{RELATION_LABEL} {{name: $rname}}) \
              RETURN a.name"
         ),
+        HashMap::from([("rname".to_string(), ExecValue::String(canonical.clone()))]),
     )?;
 
     // Parent relations (SUBPROPERTY_OF)
-    let parent_relations = query_string_list(
+    let parent_relations = query_string_list_params(
         db,
         &format!(
-            "MATCH (r:{RELATION_LABEL} {{name: '{safe_r}'}})-[:{SUBPROPERTY_OF_REL}]->(p:{RELATION_LABEL}) \
+            "MATCH (r:{RELATION_LABEL} {{name: $rname}})-[:{SUBPROPERTY_OF_REL}]->(p:{RELATION_LABEL}) \
              RETURN p.name"
         ),
+        HashMap::from([("rname".to_string(), ExecValue::String(canonical.clone()))]),
     )?;
 
     // Transitive sub-relations (BFS via __SO_SUBPROPERTY_OF, excludes self)
@@ -689,10 +710,14 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
     // Domain class name
     let domain_class = {
         let q = format!(
-            "MATCH (r:{RELATION_LABEL} {{name: '{safe_r}'}})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) \
+            "MATCH (r:{RELATION_LABEL} {{name: $rname}})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) \
              RETURN c.name"
         );
-        let result = execute_or_empty(db, &q)?;
+        let result = execute_params_or_empty(
+            db,
+            &q,
+            HashMap::from([("rname".to_string(), ExecValue::String(canonical.clone()))]),
+        )?;
         result
             .rows
             .first()
@@ -704,10 +729,14 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
     // Range class name
     let range_class = {
         let q = format!(
-            "MATCH (r:{RELATION_LABEL} {{name: '{safe_r}'}})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) \
+            "MATCH (r:{RELATION_LABEL} {{name: $rname}})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) \
              RETURN c.name"
         );
-        let result = execute_or_empty(db, &q)?;
+        let result = execute_params_or_empty(
+            db,
+            &q,
+            HashMap::from([("rname".to_string(), ExecValue::String(canonical.clone()))]),
+        )?;
         result
             .rows
             .first()
@@ -733,7 +762,7 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
 
     // Instance count: try MATCH ()-[r:REL_NAME]->() RETURN count(r)
     let instance_count = {
-        let q = format!("MATCH ()-[r:{safe_r}]->() RETURN count(r)");
+        let q = format!("MATCH ()-[r:{canonical}]->() RETURN count(r)");
         match db.execute(&q) {
             Ok(r) => r
                 .rows
@@ -771,257 +800,41 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
 
 // ── validate ──────────────────────────────────────────────────────────────────
 
-pub fn validate(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
-    let args = params.unwrap_or(json!({}));
-    let scope = args["scope"].as_str().unwrap_or("full_graph");
+pub fn validate(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
+    let report = sparrowdb_ontology_core::validate(db).map_err(|e| {
+        mcp_error(-32603, "Validation error", json!({"detail": e.to_string()}))
+    })?;
 
-    let start = Instant::now();
-    let mut violations: Vec<Value> = Vec::new();
-    let mut warnings: Vec<Value> = Vec::new();
-    let mut nodes_scanned: u64 = 0;
-    let mut edges_scanned: u64 = 0;
+    let violations_found = report.violations.len() as u64;
+    let warnings_found = report.warnings.len() as u64;
 
-    // ── Step 1: Ontology consistency — every __SO_Relation must have DOMAIN and RANGE ──
-    {
-        let q = format!(
-            "MATCH (r:{RELATION_LABEL}) RETURN r.name, r.symbol_id"
-        );
-        let result = execute_or_empty(db, &q)?;
-        for row in &result.rows {
-            let rel_name = str_val(row, 0);
-            let rel_sid = str_val(row, 1);
-            let safe_sid = escape_cypher_string(&rel_sid);
-
-            // Check DOMAIN
-            let domain_q = format!(
-                "MATCH (r:{RELATION_LABEL} {{symbol_id: '{safe_sid}'}})-[:{DOMAIN_REL}]->(c:{CLASS_LABEL}) \
-                 RETURN c.name"
-            );
-            let has_domain = execute_or_empty(db, &domain_q)?
-                .rows
-                .first()
-                .is_some();
-            if !has_domain {
-                violations.push(json!({
-                    "kind": "MissingDomain",
-                    "message": format!("Relation '{}' has no DOMAIN edge", rel_name),
-                    "relation": rel_name,
-                }));
-            }
-
-            // Check RANGE
-            let range_q = format!(
-                "MATCH (r:{RELATION_LABEL} {{symbol_id: '{safe_sid}'}})-[:{RANGE_REL}]->(c:{CLASS_LABEL}) \
-                 RETURN c.name"
-            );
-            let has_range = execute_or_empty(db, &range_q)?
-                .rows
-                .first()
-                .is_some();
-            if !has_range {
-                violations.push(json!({
-                    "kind": "MissingRange",
-                    "message": format!("Relation '{}' has no RANGE edge", rel_name),
-                    "relation": rel_name,
-                }));
-            }
-
-            edges_scanned += 1;
-        }
-    }
-
-    // ── Step 2: Full-graph scan (if requested) ────────────────────────────────
-    if scope == "full_graph" {
-        // Get all known canonical class names
-        let known_classes: std::collections::HashSet<String> = {
-            let q = format!("MATCH (c:{CLASS_LABEL}) RETURN c.name");
-            let result = execute_or_empty(db, &q)?;
-            result
-                .rows
-                .iter()
-                .filter_map(|row| row.first())
-                .filter_map(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
-                .collect()
-        };
-
-        // Get all known relation names to skip them when checking node labels
-        // (CALL db.schema() returns both label names and relationship types as strings)
-        let known_relations: std::collections::HashSet<String> = {
-            let q = format!("MATCH (r:{RELATION_LABEL}) RETURN r.name");
-            let result = execute_or_empty(db, &q)?;
-            result
-                .rows
-                .iter()
-                .filter_map(|row| row.first())
-                .filter_map(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
-                .collect()
-        };
-
-        // Use CALL db.schema() to get all labels
-        // If not available, fall back to scanning via MATCH (n) RETURN DISTINCT labels(n)[0]
-        let all_labels: Vec<String> = {
-            match db.execute("CALL db.schema()") {
-                Ok(r) => {
-                    // schema() returns rows; try to collect string values
-                    r.rows
-                        .iter()
-                        .flat_map(|row| row.iter())
-                        .filter_map(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
-                        .filter(|s| !s.is_empty())
-                        .collect()
-                }
-                Err(_) => {
-                    // Fall back: get distinct labels from all nodes
-                    // labels(n) returns List([String(label)]) — no subscript support
-                    match execute_or_empty(
-                        db,
-                        "MATCH (n) RETURN DISTINCT labels(n)",
-                    ) {
-                        Ok(r) => {
-                            let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
-                            for row in &r.rows {
-                                if let Some(v) = row.first() {
-                                    let label = match v {
-                                        ExecValue::List(list) => list.first().and_then(|item| {
-                                            if let ExecValue::String(s) = item { Some(s.clone()) } else { None }
-                                        }),
-                                        ExecValue::String(s) => Some(s.clone()),
-                                        _ => None,
-                                    };
-                                    if let Some(l) = label {
-                                        if !l.is_empty() {
-                                            seen.insert(l);
-                                        }
-                                    }
-                                }
-                            }
-                            seen.into_iter().collect()
-                        },
-                        Err(_) => vec![],
-                    }
-                }
-            }
-        };
-
-        // Labels to always skip: __SO_ internal labels, and schema metadata labels
-        // returned by CALL db.schema() (e.g. "node", "relationship")
-        let schema_meta_labels: std::collections::HashSet<&str> =
-            ["node", "relationship", "label", "property", "index", "constraint"]
-                .iter()
-                .cloned()
-                .collect();
-
-        for raw_label in &all_labels {
-            // Skip __SO_ internal labels
-            if raw_label.starts_with("__SO_") {
-                continue;
-            }
-            // Skip schema metadata labels from CALL db.schema()
-            if schema_meta_labels.contains(raw_label.as_str()) {
-                continue;
-            }
-            // Skip relation types — CALL db.schema() returns both node labels and rel types
-            if known_relations.contains(raw_label) {
-                continue;
-            }
-            nodes_scanned += 1;
-
-            // Check that the label is a known canonical class or resolvable via alias
-            if !known_classes.contains(raw_label) {
-                // Try resolve
-                match resolve(db, raw_label, AliasKind::Class) {
-                    Ok(_) => {
-                        // Resolvable via alias — note as warning
-                        warnings.push(json!({
-                            "message": format!(
-                                "Label '{}' is an alias, not a canonical class name",
-                                raw_label
-                            ),
-                            "label": raw_label,
-                        }));
-                    }
-                    Err(_) => {
-                        violations.push(json!({
-                            "kind": "UnknownClass",
-                            "message": format!(
-                                "Label '{}' is not a known class or alias in the ontology",
-                                raw_label
-                            ),
-                            "label": raw_label,
-                        }));
-                    }
-                }
-            }
-        }
-    }
-
-    // ── Step 3: per-class unseeded warning ────────────────────────────────────
-    // When a specific class_name is provided and validation passes (no violations),
-    // warn if the class has 0 declared properties — calling create_entity with any
-    // properties will be rejected until add_property has been called.
-    if violations.is_empty() {
-        if let Some(class_name) = args["class_name"].as_str() {
-            if !class_name.is_empty() {
-                match resolve(db, class_name, AliasKind::Class) {
-                    Ok(resolved) => {
-                        let safe_sid = escape_cypher_string(&resolved.symbol_id);
-                        let prop_q = format!(
-                            "MATCH (c:{CLASS_LABEL} {{symbol_id: '{safe_sid}'}})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) \
-                             RETURN p.name"
-                        );
-                        let prop_count = execute_or_empty(db, &prop_q)
-                            .map(|r| r.rows.len())
-                            .unwrap_or(0);
-                        if prop_count == 0 {
-                            warnings.push(json!(
-                                format!(
-                                    "{} has 0 declared properties. create_entity will reject any \
-                                     properties until add_property is called. This validation result \
-                                     does not guarantee create_entity will succeed.",
-                                    resolved.canonical_name
-                                )
-                            ));
-                        }
-                    }
-                    Err(_) => {
-                        // Unresolvable class name — leave it; violations will catch this
-                        // if full_graph scan ran, or silently skip if scope was narrower.
-                    }
-                }
-            }
-        }
-    }
-
-    let duration_ms = start.elapsed().as_millis() as u64;
-    let violations_found = violations.len() as u64;
-    let warnings_found = warnings.len() as u64;
-
-    let report = json!({
-        "valid": violations.is_empty(),
-        "violations": violations,
-        "warnings": warnings,
+    let report_json = json!({
+        "valid": report.violations.is_empty(),
+        "violations": report.violations,
+        "warnings": report.warnings,
         "stats": {
-            "nodes_scanned": nodes_scanned,
-            "edges_scanned": edges_scanned,
             "violations_found": violations_found,
             "warnings_found": warnings_found,
-            "duration_ms": duration_ms,
         }
     });
 
     Ok(json!({
         "content": [{
             "type": "text",
-            "text": serde_json::to_string(&report).unwrap_or_default()
+            "text": serde_json::to_string(&report_json).unwrap_or_default()
         }]
     }))
 }
 
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
-/// Execute a query and return all first-column string values.
-fn query_string_list(db: &GraphDb, q: &str) -> Result<Vec<String>, Value> {
-    let result = execute_or_empty(db, q)?;
+/// Execute a parameterized query and return all first-column string values.
+fn query_string_list_params(
+    db: &GraphDb,
+    q: &str,
+    params: HashMap<String, ExecValue>,
+) -> Result<Vec<String>, Value> {
+    let result = execute_params_or_empty(db, q, params)?;
     let mut out = Vec::new();
     for row in &result.rows {
         if let Some(ExecValue::String(s)) = row.first() {
@@ -1030,6 +843,8 @@ fn query_string_list(db: &GraphDb, q: &str) -> Result<Vec<String>, Value> {
     }
     Ok(out)
 }
+
+
 
 /// Convert an ExecValue to a JSON Value for property serialization.
 fn exec_value_to_json(v: &ExecValue) -> Value {

@@ -21,4 +21,7 @@ pub use model::{
     research_notes_classes, research_notes_properties, research_notes_relations,
 };
 pub use resolution::{resolve, ResolvedSymbol};
-pub use validation::ValidationContext;
+pub use validation::{
+    validate, ValidationContext, ValidationReport, ValidationViolation, ValidationWarning,
+    ViolationKind,
+};
