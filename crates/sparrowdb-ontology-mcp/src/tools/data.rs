@@ -4,7 +4,7 @@ use std::time::Instant;
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
 use sparrowdb_execution::Value as ExecValue;
-use sparrowdb_ontology_core::hierarchy::expand_subclasses;
+use sparrowdb_ontology_core::hierarchy::{expand_subclasses, expand_subproperties};
 use sparrowdb_ontology_core::model::{AliasKind, PropertyValue};
 use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
@@ -671,14 +671,13 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
         ),
     )?;
 
-    // Subproperties
-    let subproperties = query_string_list(
-        db,
-        &format!(
-            "MATCH (sub:{RELATION_LABEL})-[:{SUBPROPERTY_OF_REL}]->(r:{RELATION_LABEL} {{name: '{safe_r}'}}) \
-             RETURN sub.name"
-        ),
-    )?;
+    // Transitive sub-relations (BFS via __SO_SUBPROPERTY_OF, excludes self)
+    let subproperties = {
+        let mut all = expand_subproperties(db, canonical, 20)
+            .map_err(|e| mcp_error(-32603, "Subproperty expansion failed", so_error_to_mcp(&e)))?;
+        all.retain(|n| n != canonical);
+        all
+    };
 
     // Domain class name
     let domain_class = {
