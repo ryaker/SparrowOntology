@@ -5,6 +5,7 @@ pub mod init;
 pub mod model;
 pub mod namespace;
 pub mod resolution;
+pub mod snapshot;
 pub mod validation;
 
 // ── Convenient re-exports ────────────────────────────────────────────────────
@@ -21,6 +22,7 @@ pub use model::{
     research_notes_classes, research_notes_properties, research_notes_relations,
 };
 pub use resolution::{resolve, ResolvedSymbol};
+pub use snapshot::{export_schema, import_schema, ImportSchemaResult, SchemaSnapshot, SNAPSHOT_VERSION};
 pub use validation::{
     validate, ValidationContext, ValidationReport, ValidationViolation, ValidationWarning,
     ViolationKind,
