@@ -294,7 +294,29 @@ fn handle_tool_call(db: &sparrowdb::GraphDb, params: Option<Value>) -> Result<Va
         .ok_or_else(|| json!({"code": -32602, "message": "Missing tool name"}))?;
     let args = params.get("arguments").cloned();
 
-    tools::handle_tool_call(db, tool_name, args)
+    match tools::handle_tool_call(db, tool_name, args) {
+        Ok(v) => Ok(v),
+        // MCP spec: tool errors must be returned as result with isError:true, NOT as
+        // JSON-RPC errors. JSON-RPC errors are swallowed by Claude as "gateway failure"
+        // without surfacing the detail. Wrap here so Claude sees the full error.
+        Err(e) => {
+            let text = {
+                let msg = e.get("message").and_then(|m| m.as_str()).unwrap_or("Tool error");
+                let data = e.get("data");
+                match data {
+                    Some(d) if !d.is_null() => format!(
+                        "{msg}\n{}",
+                        serde_json::to_string_pretty(d).unwrap_or_default()
+                    ),
+                    _ => msg.to_string(),
+                }
+            };
+            Ok(json!({
+                "content": [{"type": "text", "text": text}],
+                "isError": true
+            }))
+        }
+    }
 }
 
 // ── tools/list ────────────────────────────────────────────────────────────────
