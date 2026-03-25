@@ -280,6 +280,31 @@ dependencies = [
 ]
 
 [[package]]
+name = "crossbeam-deque"
+version = "0.8.6"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "9dd111b7b7f7d55b72c0a6ae361660ee5853c9af73f70c3c2ef6858b950e2e51"
+dependencies = [
+ "crossbeam-epoch",
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-epoch"
+version = "0.9.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5b82ac4a3c2ca9c3460964f020e1402edd5753411d7737aa39c3714ad1b5420e"
+dependencies = [
+ "crossbeam-utils",
+]
+
+[[package]]
+name = "crossbeam-utils"
+version = "0.8.21"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d0a5c400df2834b80a4c3327b3aad3a4c4cd4de0629063962b03235697506a28"
+
+[[package]]
 name = "crypto-common"
 version = "0.1.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -310,6 +335,12 @@ checksum = "704a3c26996a80471189265814dbc2c257598b96b8a7feae2d31ace646bb9782"
 dependencies = [
  "memchr",
 ]
+
+[[package]]
+name = "either"
+version = "1.15.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "equivalent"
@@ -772,6 +803,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "rayon"
+version = "1.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "368f01d005bf8fd9b1206fb6fa653e6c4a81ceb1466406b81792d87c5677a58f"
+dependencies = [
+ "either",
+ "rayon-core",
+]
+
+[[package]]
+name = "rayon-core"
+version = "1.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "22e18b0f0062d30d4230b2e85ff77fdfe4326feb054b9783a3460d8435c8ab91"
+dependencies = [
+ "crossbeam-deque",
+ "crossbeam-utils",
+]
+
+[[package]]
 name = "redox_syscall"
 version = "0.5.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -936,9 +987,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c864d0b759bd5fabb7d2d4be05828d2d52306f3b25939a368f76edd186717d74"
+version = "0.1.6"
 dependencies = [
  "clap",
  "rand",
@@ -954,9 +1003,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-catalog"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cc7f011738a733c0540470cdf9deddda5a405f8f846184d4186515d7f4e69fae"
+version = "0.1.6"
 dependencies = [
  "crc32fast",
  "sparrowdb-common",
@@ -965,9 +1012,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-common"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "765ead57e74c8c0f317ca344803172fa3335051a3c92692d558d7dee3bc81210"
+version = "0.1.6"
 dependencies = [
  "crc32fast",
  "serde",
@@ -975,9 +1020,7 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-cypher"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "60c5c9f435dad2ac6f9d68a7a44cd4b985fa90318efd956642f32d67681c2a90"
+version = "0.1.6"
 dependencies = [
  "sparrowdb-catalog",
  "sparrowdb-common",
@@ -985,11 +1028,10 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-execution"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f937e7e17f43f5ce1bb3e803fc1dfdc915fd49164e05fbdfcc2b6a53b9e82d7"
+version = "0.1.6"
 dependencies = [
  "bincode",
+ "rayon",
  "roaring",
  "serde",
  "serde_json",
@@ -1052,12 +1094,11 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-storage"
-version = "0.1.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "84cf189ff12d0212e0496de9773c3be472ca70fb4331b047decc64b509c515c2"
+version = "0.1.6"
 dependencies = [
  "chacha20poly1305",
  "crc32c",
+ "crc32fast",
  "rand",
  "sparrowdb-common",
  "tracing",

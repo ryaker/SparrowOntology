@@ -553,28 +553,32 @@ fn get_class_node_id(db: &GraphDb, name: &str) -> Result<NodeId, SoError> {
 }
 
 /// Get the NodeId for a node by label and name property.
+///
+/// Uses two single-column scans + zip (workaround for SparrowDB ≤0.1.6 inline-filter
+/// regression: `{name: '...'}` misses nodes added via WriteTx after index creation).
 fn get_node_id_by_name(db: &GraphDb, label: &str, name: &str) -> Result<NodeId, SoError> {
-    let safe_name = escape_cypher_string(name);
-    let q = format!("MATCH (n:{label} {{name: '{safe_name}'}}) RETURN id(n)");
-    let result = db.execute(&q)?;
-    result
-        .rows
-        .first()
-        .and_then(|r| r.first())
-        .and_then(|v| {
-            if let ExecValue::Int64(n) = v {
-                Some(NodeId(*n as u64))
-            } else {
-                None
+    let q_names = format!("MATCH (n:{label}) RETURN n.name");
+    let q_ids = format!("MATCH (n:{label}) RETURN id(n)");
+
+    let names_r = db.execute(&q_names)?;
+    let ids_r = db.execute(&q_ids)?;
+
+    for (nr, ir) in names_r.rows.iter().zip(ids_r.rows.iter()) {
+        if let (Some(ExecValue::String(n)), Some(ExecValue::Int64(id))) =
+            (nr.first(), ir.first())
+        {
+            if n == name {
+                return Ok(NodeId(*id as u64));
             }
-        })
-        .ok_or_else(|| SoError::UnknownSymbol {
-            name: name.to_string(),
-            kind: label.to_string(),
-            valid: vec![],
-            closest_match: None,
-            suggestion: None,
-        })
+        }
+    }
+    Err(SoError::UnknownSymbol {
+        name: name.to_string(),
+        kind: label.to_string(),
+        valid: vec![],
+        closest_match: None,
+        suggestion: None,
+    })
 }
 
 /// Get the NodeId for a node by label and symbol_id.

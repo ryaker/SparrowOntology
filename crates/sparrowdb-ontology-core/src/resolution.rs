@@ -31,94 +31,112 @@ pub struct ResolvedSymbol {
 
 /// Resolve a name (canonical or alias) to its canonical symbol.
 ///
-/// Two-pass: canonical lookup first, then alias lookup.
+/// Three-pass: canonical lookup, alias lookup, then case-insensitive fallback.
 /// Returns `SoError::UnknownSymbol` with a list of valid names on miss.
 ///
 /// `kind` is mandatory — the same string may be a class alias AND a relation alias.
 ///
-/// NOTE: SparrowDB's `ReadTx` has no query interface — only `get_node(id, cols)`.
-/// We use `db.execute(cypher)` for all reads. If a future SparrowDB release adds
-/// `ReadTx::query()`, switching would give snapshot-isolated reads.
+/// NOTE: SparrowDB has a regression (≤0.1.6) where property-filter queries
+/// (`WHERE n.name = '...'` and `{name: '...'}` inline form) both miss nodes
+/// written via WriteTx after an index is created on the label.
+/// Workaround: full label scan (`MATCH (n:Label) RETURN ...`) and filter in Rust.
 pub fn resolve(db: &GraphDb, name: &str, kind: AliasKind) -> Result<ResolvedSymbol, SoError> {
     let canonical_label = match kind {
         AliasKind::Class => CLASS_LABEL,
         AliasKind::Relation => RELATION_LABEL,
     };
-    let safe_name = escape_cypher_string(name);
 
-    // Pass 1: canonical match
-    // SparrowDB returns InvalidArgument("unknown label") if the label doesn't exist yet → treat as miss.
-    let q = format!(
-        "MATCH (n:{canonical_label}) WHERE n.name = '{safe_name}' RETURN n.symbol_id, n.name"
-    );
-    let result = match db.execute(&q) {
+    // Workaround for SparrowDB ≤0.1.6 bug: multi-column label scans
+    // (`RETURN n.a, n.b`) return 0 rows after 2+ WriteTx commits on the label,
+    // but single-column scans always work. Use two separate scans and zip by
+    // insertion-order position (SparrowDB node order is stable within a label).
+    let scan_names = format!("MATCH (n:{canonical_label}) RETURN n.name");
+    let scan_sids = format!("MATCH (n:{canonical_label}) RETURN n.symbol_id");
+
+    let names_result = match db.execute(&scan_names) {
         Ok(r) => r,
         Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             sparrowdb_execution::QueryResult::empty(vec![])
         }
         Err(e) => return Err(SoError::Storage(e)),
     };
-    if let Some(row) = result.rows.first() {
-        let symbol_id = str_from_value(&row[0])?.to_string();
-        let canonical_name = str_from_value(&row[1])?.to_string();
+    let sids_result = match db.execute(&scan_sids) {
+        Ok(r) => r,
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
+            sparrowdb_execution::QueryResult::empty(vec![])
+        }
+        Err(e) => return Err(SoError::Storage(e)),
+    };
+
+    // Build (name, symbol_id) pairs from the two parallel scans.
+    let canonical_rows: Vec<(String, String)> = names_result
+        .rows
+        .iter()
+        .zip(sids_result.rows.iter())
+        .filter_map(|(nr, sr)| {
+            if let (Ok(n), Ok(s)) = (str_from_value(&nr[0]), str_from_value(&sr[0])) {
+                Some((n.to_string(), s.to_string()))
+            } else {
+                None
+            }
+        })
+        .collect();
+
+    // Pass 1: exact canonical name match.
+    if let Some((canon_name, sym_id)) = canonical_rows.iter().find(|(n, _)| n == name) {
         return Ok(ResolvedSymbol {
-            canonical_name,
-            symbol_id,
+            canonical_name: canon_name.clone(),
+            symbol_id: sym_id.clone(),
             was_alias: false,
             original_name: name.to_string(),
         });
     }
 
-    // Pass 2: alias match
+    // Pass 2: alias match — full scan, Rust-side name+kind filter.
     let kind_str = alias_kind_str(&kind);
     let q = format!(
         "MATCH (a:{ALIAS_LABEL})-[:__SO_ALIAS_OF]->(c:{canonical_label}) \
-         WHERE a.name = '{safe_name}' AND a.kind = '{kind_str}' \
-         RETURN c.symbol_id, c.name"
+         RETURN a.name, a.kind, c.symbol_id, c.name"
     );
-    let result = match db.execute(&q) {
+    let alias_result = match db.execute(&q) {
         Ok(r) => r,
         Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             sparrowdb_execution::QueryResult::empty(vec![])
         }
         Err(e) => return Err(SoError::Storage(e)),
     };
-    if let Some(row) = result.rows.first() {
-        let symbol_id = str_from_value(&row[0])?.to_string();
-        let canonical_name = str_from_value(&row[1])?.to_string();
-        return Ok(ResolvedSymbol {
-            canonical_name,
-            symbol_id,
-            was_alias: true,
-            original_name: name.to_string(),
-        });
+    for row in &alias_result.rows {
+        if let (Ok(a_name), Ok(a_kind), Ok(sym_id), Ok(canon_name)) = (
+            str_from_value(&row[0]),
+            str_from_value(&row[1]),
+            str_from_value(&row[2]),
+            str_from_value(&row[3]),
+        ) {
+            if a_name == name && a_kind == kind_str {
+                return Ok(ResolvedSymbol {
+                    canonical_name: canon_name.to_string(),
+                    symbol_id: sym_id.to_string(),
+                    was_alias: true,
+                    original_name: name.to_string(),
+                });
+            }
+        }
     }
 
-    let valid = list_canonical_names(db, kind)?;
+    let valid: Vec<String> = canonical_rows.iter().map(|(n, _)| n.clone()).collect();
     let name_lower = name.to_lowercase();
 
     // Pass 3: case-insensitive exact match — auto-resolve "person" → "Person".
-    // Similarity == 1.0 means case-insensitive exact match. Auto-resolve instead of error.
-    if let Some(canonical) = valid.iter().find(|n| n.to_lowercase() == name_lower) {
-        let safe_canonical = escape_cypher_string(canonical);
-        let q = format!(
-            "MATCH (n:{canonical_label}) WHERE n.name = '{safe_canonical}' RETURN n.symbol_id, n.name"
-        );
-        if let Ok(result) = db.execute(&q) {
-            if let Some(row) = result.rows.first() {
-                if let (Ok(symbol_id), Ok(canonical_name)) = (
-                    str_from_value(&row[0]).map(|s| s.to_string()),
-                    str_from_value(&row[1]).map(|s| s.to_string()),
-                ) {
-                    return Ok(ResolvedSymbol {
-                        canonical_name,
-                        symbol_id,
-                        was_alias: true,
-                        original_name: name.to_string(),
-                    });
-                }
-            }
-        }
+    if let Some((canon_name, sym_id)) = canonical_rows
+        .iter()
+        .find(|(n, _)| n.to_lowercase() == name_lower)
+    {
+        return Ok(ResolvedSymbol {
+            canonical_name: canon_name.clone(),
+            symbol_id: sym_id.clone(),
+            was_alias: true,
+            original_name: name.to_string(),
+        });
     }
 
     let closest = valid
