@@ -5,12 +5,14 @@ use crate::error::SoError;
 use crate::model::AliasKind;
 use crate::namespace::{ALIAS_LABEL, CLASS_LABEL, RELATION_LABEL};
 
-// ── Cypher string safety (SPA-218) ────────────────────────────────────────────
+// ── Cypher string safety ──────────────────────────────────────────────────────
 
 /// Escape a user-supplied string for safe interpolation into a Cypher query.
 /// Replaces `\` → `\\` and `'` → `\'`.
 ///
-/// TODO SPA-218: Replace with parameterized Cypher when SPA-218 ships in SparrowDB.
+/// Used for symbol names (class/relation names) in WHERE clauses.
+/// For property values, prefer `execute_with_params` with scalar params.
+/// Note: SparrowDB 0.1.2 also exports `cypher_escape_string` in its public API.
 pub(crate) fn escape_cypher_string(s: &str) -> String {
     s.replace('\\', "\\\\").replace('\'', "\\'")
 }
@@ -34,8 +36,9 @@ pub struct ResolvedSymbol {
 ///
 /// `kind` is mandatory — the same string may be a class alias AND a relation alias.
 ///
-/// NOTE: SparrowDB has no `ReadTx::query()`. We use `db.execute(cypher)` for all
-/// reads. TODO SPA-209: switch to `db.begin_read()?.query()` if that API ships.
+/// NOTE: SparrowDB's `ReadTx` has no query interface — only `get_node(id, cols)`.
+/// We use `db.execute(cypher)` for all reads. If a future SparrowDB release adds
+/// `ReadTx::query()`, switching would give snapshot-isolated reads.
 pub fn resolve(db: &GraphDb, name: &str, kind: AliasKind) -> Result<ResolvedSymbol, SoError> {
     let canonical_label = match kind {
         AliasKind::Class => CLASS_LABEL,

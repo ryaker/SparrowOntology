@@ -1,6 +1,6 @@
 /// Namespace prefix for all Sparrow Ontology nodes/edges.
-/// TODO SPA-208: Replace convention-based protection with
-/// `OpenOptions::reserve_label_prefix("__SO_")` when SPA-208 ships.
+/// SparrowDB 0.1.2+ enforces this prefix at the Cypher layer — CREATE with
+/// an `__SO_` label/rel-type is rejected. DELETE and WriteTx are unaffected.
 pub const SO_NAMESPACE: &str = "__SO_";
 
 // ── Node labels ──────────────────────────────────────────────────────────────
@@ -8,7 +8,6 @@ pub const SO_NAMESPACE: &str = "__SO_";
 pub const CLASS_LABEL: &str = "__SO_Class";
 pub const RELATION_LABEL: &str = "__SO_Relation";
 pub const PROPERTY_LABEL: &str = "__SO_Property";
-pub const CONSTRAINT_LABEL: &str = "__SO_Constraint";
 pub const ALIAS_LABEL: &str = "__SO_Alias";
 
 // ── Edge types ───────────────────────────────────────────────────────────────
@@ -17,7 +16,6 @@ pub const ALIAS_OF_REL: &str = "__SO_ALIAS_OF";
 pub const SUBCLASS_OF_REL: &str = "__SO_SUBCLASS_OF";
 pub const SUBPROPERTY_OF_REL: &str = "__SO_SUBPROPERTY_OF";
 pub const HAS_PROPERTY_REL: &str = "__SO_HAS_PROPERTY";
-pub const HAS_CONSTRAINT_REL: &str = "__SO_HAS_CONSTRAINT";
 pub const DOMAIN_REL: &str = "__SO_DOMAIN";
 pub const RANGE_REL: &str = "__SO_RANGE";
 

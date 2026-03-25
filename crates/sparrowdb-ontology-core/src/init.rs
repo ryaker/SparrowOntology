@@ -49,12 +49,14 @@ pub enum StarterKind {
 /// Returns `SoError::AlreadyInitialized` if the DB already has `__SO_Class`
 /// nodes and `force` is `false`.
 ///
-/// NOTE: Uses `WriteTx` low-level API (create_label, create_node, create_edge)
-/// to bypass the Cypher-layer `__SO_` reservation check.
-/// TODO SPA-208: replace with `db.begin_write_privileged()` when available.
-/// TODO: force=true currently re-seeds (idempotent MERGE semantics) rather than
-/// wiping. Full wipe requires `delete_edge` + `delete_node` on __SO_* nodes —
-/// not yet available. See SPA-208.
+/// NOTE: Uses `WriteTx` low-level API (create_label, merge_node, create_edge)
+/// to bypass the Cypher-layer `__SO_` CREATE reservation. WriteTx bypasses
+/// Cypher checks by design — no privileged write API is needed.
+///
+/// NOTE: `force=true` currently re-seeds via idempotent MERGE (existing nodes
+/// are overwritten). A full wipe via `MATCH (n:__SO_Class) DELETE n` is
+/// unblocked (SparrowDB 0.1.2 MATCH…DELETE does not check reserved labels)
+/// but requires edge deletion first — tracked as a follow-up.
 pub fn init(
     db: &GraphDb,
     starter: Option<StarterKind>,
@@ -87,7 +89,8 @@ pub fn init(
         return Err(SoError::AlreadyInitialized);
     }
 
-    // force=true: skip deletion (requires delete_edge API — TODO SPA-208).
+    // force=true: currently re-seeds (idempotent). Full wipe (delete all __SO_* nodes
+    // and edges) is unblocked — MATCH…DELETE works in SparrowDB 0.1.2.
     // Re-seeding is idempotent: create_label is idempotent, existing nodes
     // with same symbol_id are simply re-written over the same storage slot.
 
