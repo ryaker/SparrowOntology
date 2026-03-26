@@ -538,6 +538,15 @@ fn tool_list() -> Value {
                     "properties": {},
                     "required": []
                 }
+            },
+            {
+                "name": "export_json_ld",
+                "description": "Export the full ontology schema as a JSON-LD document. Returns an owl:Class and owl:ObjectProperty graph with @context, rdfs:label, rdfs:comment, skos:altLabel, rdfs:subClassOf, rdfs:domain, rdfs:range, and so: extension terms.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {},
+                    "required": []
+                }
             }
         ]
     })

@@ -98,6 +98,7 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
         "add_property" => tool_add_property(db, params),
         "health" => health(db, params),
         "stats" => stats(db, params),
+        "export_json_ld" => tool_export_json_ld(db, params),
         _ => Err(mcp_error(-32601, "Method not found", json!({"tool": name}))),
     }
 }
@@ -1246,5 +1247,17 @@ pub fn stats(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
             "type": "text",
             "text": serde_json::to_string(&payload).unwrap_or_default()
         }]
+    }))
+}
+
+// ── export_json_ld ────────────────────────────────────────────────────────────
+
+pub fn tool_export_json_ld(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
+    let value = sparrowdb_ontology_core::export_json_ld(db)
+        .map_err(|e| so_error_to_mcp(&e))?;
+    let json_str = serde_json::to_string_pretty(&value)
+        .map_err(|e| mcp_error(-32603, "serialization_error", json!({"detail": e.to_string()})))?;
+    Ok(json!({
+        "content": [{"type": "text", "text": json_str}]
     }))
 }

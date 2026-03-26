@@ -24,7 +24,8 @@ pub fn handle_tool_call(
         | "define_subproperty"
         | "resolve_name"
         | "health"
-        | "stats" => schema::dispatch(db, name, params),
+        | "stats"
+        | "export_json_ld" => schema::dispatch(db, name, params),
 
         // Data / entity tools
         "create_entity"
