@@ -5,7 +5,7 @@ use std::process;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{export_json_ld, import_records, init, ImportTemplate, StarterKind};
+use sparrowdb_ontology_core::{export_json_ld, import_records, import_turtle, init, DomainRangeStrategy, ImportOptions, ImportTemplate, StarterKind};
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
@@ -186,6 +186,19 @@ enum Commands {
         #[arg(long)]
         skip_errors: bool,
     },
+    /// Import a Turtle (.ttl) ontology file into the database
+    ImportTurtle {
+        /// Path to the Turtle file to import
+        file: PathBuf,
+        #[arg(long)]
+        db: PathBuf,
+        /// Optional base IRI for resolving relative IRIs
+        #[arg(long)]
+        base_iri: Option<String>,
+        /// Domain/range strategy: 'first' (take first value) or 'unconstrained' (ignore if multiple)
+        #[arg(long, default_value = "unconstrained")]
+        strategy: String,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -227,6 +240,9 @@ fn run(cli: Cli) -> Result<(), String> {
         Commands::ExportJsonLd { db, output, pretty } => cmd_export_json_ld(&db, output.as_deref(), pretty),
         Commands::Import { db, file, template, dry_run, skip_errors } => {
             cmd_import(&db, &file, &template, dry_run, skip_errors)
+        }
+        Commands::ImportTurtle { file, db, base_iri, strategy } => {
+            cmd_import_turtle(&db, &file, base_iri, &strategy)
         }
     }
 }
@@ -670,5 +686,38 @@ fn cmd_stats(db_path: &PathBuf) -> Result<(), String> {
     println!("Status: {status}");
     println!("Classes:   {class_count}");
     println!("Relations: {rel_count}");
+    Ok(())
+}
+
+fn cmd_import_turtle(
+    db_path: &PathBuf,
+    file: &PathBuf,
+    base_iri: Option<String>,
+    strategy: &str,
+) -> Result<(), String> {
+    let ttl = std::fs::read_to_string(file)
+        .map_err(|e| format!("Error: cannot read file {}: {e}", file.display()))?;
+    let db = open_db(db_path)?;
+
+    let domain_range_strategy = match strategy {
+        "first" => DomainRangeStrategy::FirstOnly,
+        _ => DomainRangeStrategy::Unconstrained,
+    };
+
+    let opts = ImportOptions { base_iri, domain_range_strategy };
+    let summary = import_turtle(&db, &ttl, opts)
+        .map_err(|e| format!("import failed: {e}"))?;
+
+    println!("Import complete:");
+    println!("  Classes:    {}", summary.classes_imported);
+    println!("  Relations:  {}", summary.relations_imported);
+    println!("  Subclasses: {}", summary.subclasses_imported);
+    println!("  Aliases:    {}", summary.aliases_imported);
+    if !summary.warnings.is_empty() {
+        println!("Warnings ({}):", summary.warnings.len());
+        for w in &summary.warnings {
+            println!("  - {w}");
+        }
+    }
     Ok(())
 }
