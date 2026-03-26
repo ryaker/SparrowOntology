@@ -2,6 +2,7 @@ pub mod error;
 pub mod hierarchy;
 pub mod import;
 pub mod init;
+pub mod jsonld;
 pub mod model;
 pub mod namespace;
 pub mod resolution;
@@ -22,6 +23,7 @@ pub use model::{
     research_notes_classes, research_notes_properties, research_notes_relations,
 };
 pub use resolution::{resolve, ResolvedSymbol};
+pub use jsonld::export_json_ld;
 pub use snapshot::{export_schema, import_schema, ImportSchemaResult, SchemaSnapshot, SNAPSHOT_VERSION};
 pub use validation::{
     validate, ValidationContext, ValidationReport, ValidationViolation, ValidationWarning,
