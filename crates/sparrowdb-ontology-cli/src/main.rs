@@ -5,7 +5,7 @@ use std::process;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{import_records, init, ImportTemplate, StarterKind};
+use sparrowdb_ontology_core::{export_json_ld, import_records, init, ImportTemplate, StarterKind};
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
@@ -158,6 +158,17 @@ enum Commands {
         #[arg(long)]
         db: PathBuf,
     },
+    /// Export the ontology as a JSON-LD document
+    ExportJsonLd {
+        #[arg(long)]
+        db: PathBuf,
+        /// Write output to this file path (default: stdout)
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Pretty-print the JSON (2-space indent)
+        #[arg(long)]
+        pretty: bool,
+    },
     /// Import entities from a CSV or JSON file using a mapping template
     Import {
         #[arg(long)]
@@ -213,6 +224,7 @@ fn run(cli: Cli) -> Result<(), String> {
         }
         Commands::Explain { name, db, kind } => cmd_explain(&db, &name, &kind),
         Commands::Stats { db } => cmd_stats(&db),
+        Commands::ExportJsonLd { db, output, pretty } => cmd_export_json_ld(&db, output.as_deref(), pretty),
         Commands::Import { db, file, template, dry_run, skip_errors } => {
             cmd_import(&db, &file, &template, dry_run, skip_errors)
         }
@@ -622,6 +634,21 @@ fn cmd_import(
         result.error_count()
     );
 
+    Ok(())
+}
+
+fn cmd_export_json_ld(db_path: &PathBuf, output: Option<&std::path::Path>, pretty: bool) -> Result<(), String> {
+    let db = open_db(db_path)?;
+    let value = export_json_ld(&db).map_err(|e| format!("Error: {e}"))?;
+    let json_str = if pretty {
+        serde_json::to_string_pretty(&value).map_err(|e| format!("Error: {e}"))?
+    } else {
+        serde_json::to_string(&value).map_err(|e| format!("Error: {e}"))?
+    };
+    match output {
+        Some(path) => std::fs::write(path, &json_str).map_err(|e| format!("Error: {e}"))?,
+        None => println!("{json_str}"),
+    }
     Ok(())
 }
 
