@@ -10,6 +10,7 @@ use sparrowdb_ontology_core::namespace::{
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
 use sparrowdb_ontology_core::{add_alias, add_property, define_subclass, init, resolve, StarterKind};
+use sparrowdb_ontology_core::{DomainRangeStrategy, ImportOptions};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp};
@@ -1259,5 +1260,53 @@ pub fn tool_export_json_ld(db: &GraphDb, _params: Option<Value>) -> Result<Value
         .map_err(|e| mcp_error(-32603, "serialization_error", json!({"detail": e.to_string()})))?;
     Ok(json!({
         "content": [{"type": "text", "text": json_str}]
+    }))
+}
+
+// ── import_turtle ─────────────────────────────────────────────────────────────
+
+pub fn tool_import_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let params = params.unwrap_or(json!({}));
+
+    let ttl = params.get("turtle")
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| mcp_error(-32602, "turtle parameter required", json!({})))?;
+
+    let base_iri = params.get("base_iri")
+        .and_then(|v| v.as_str())
+        .map(|s| s.to_string());
+
+    let strategy_str = params.get("strategy")
+        .and_then(|v| v.as_str())
+        .unwrap_or("unconstrained");
+
+    let domain_range_strategy = if strategy_str == "first" {
+        DomainRangeStrategy::FirstOnly
+    } else {
+        DomainRangeStrategy::Unconstrained
+    };
+
+    let opts = ImportOptions { base_iri, domain_range_strategy };
+
+    let summary = sparrowdb_ontology_core::import_turtle(db, ttl, opts)
+        .map_err(|e| so_error_to_mcp(&e))?;
+
+    let mut result_text = format!(
+        "Import complete:\n  Classes:    {}\n  Relations:  {}\n  Subclasses: {}\n  Aliases:    {}",
+        summary.classes_imported,
+        summary.relations_imported,
+        summary.subclasses_imported,
+        summary.aliases_imported,
+    );
+
+    if !summary.warnings.is_empty() {
+        result_text.push_str(&format!("\nWarnings ({}):", summary.warnings.len()));
+        for w in &summary.warnings {
+            result_text.push_str(&format!("\n  - {w}"));
+        }
+    }
+
+    Ok(json!({
+        "content": [{"type": "text", "text": result_text}]
     }))
 }

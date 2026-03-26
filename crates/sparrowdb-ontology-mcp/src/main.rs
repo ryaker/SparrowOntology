@@ -547,6 +547,19 @@ fn tool_list() -> Value {
                     "properties": {},
                     "required": []
                 }
+            },
+            {
+                "name": "import_turtle",
+                "description": "Import an ontology from Turtle (.ttl) format into the database. Accepts raw Turtle text. Returns an import summary with counts of classes, relations, subclasses, and aliases imported, plus any warnings for unsupported constructs.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "turtle": {"type": "string", "description": "The Turtle (.ttl) ontology text to import"},
+                        "base_iri": {"type": "string", "description": "Optional base IRI for resolving relative IRIs in the Turtle file"},
+                        "strategy": {"type": "string", "enum": ["first", "unconstrained"], "description": "Domain/range strategy when multiple values exist. 'unconstrained' (default) sets no domain/range if multiple exist; 'first' takes the first value.", "default": "unconstrained"}
+                    },
+                    "required": ["turtle"]
+                }
             }
         ]
     })

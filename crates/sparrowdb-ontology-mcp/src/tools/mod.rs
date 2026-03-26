@@ -25,7 +25,8 @@ pub fn handle_tool_call(
         | "resolve_name"
         | "health"
         | "stats"
-        | "export_json_ld" => schema::dispatch(db, name, params),
+        | "export_json_ld"
+        | "import_turtle" => schema::dispatch(db, name, params),
 
         // Data / entity tools
         "create_entity"
