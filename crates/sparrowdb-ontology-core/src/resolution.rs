@@ -36,31 +36,14 @@ pub struct ResolvedSymbol {
 ///
 /// `kind` is mandatory — the same string may be a class alias AND a relation alias.
 ///
-/// NOTE: SparrowDB has a regression (≤0.1.6) where property-filter queries
-/// (`WHERE n.name = '...'` and `{name: '...'}` inline form) both miss nodes
-/// written via WriteTx after an index is created on the label.
-/// Workaround: full label scan (`MATCH (n:Label) RETURN ...`) and filter in Rust.
 pub fn resolve(db: &GraphDb, name: &str, kind: AliasKind) -> Result<ResolvedSymbol, SoError> {
     let canonical_label = match kind {
         AliasKind::Class => CLASS_LABEL,
         AliasKind::Relation => RELATION_LABEL,
     };
 
-    // Workaround for SparrowDB ≤0.1.6 bug: multi-column label scans
-    // (`RETURN n.a, n.b`) return 0 rows after 2+ WriteTx commits on the label,
-    // but single-column scans always work. Use two separate scans and zip by
-    // insertion-order position (SparrowDB node order is stable within a label).
-    let scan_names = format!("MATCH (n:{canonical_label}) RETURN n.name");
-    let scan_sids = format!("MATCH (n:{canonical_label}) RETURN n.symbol_id");
-
-    let names_result = match db.execute(&scan_names) {
-        Ok(r) => r,
-        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
-            sparrowdb_execution::QueryResult::empty(vec![])
-        }
-        Err(e) => return Err(SoError::Storage(e)),
-    };
-    let sids_result = match db.execute(&scan_sids) {
+    let scan = format!("MATCH (n:{canonical_label}) RETURN n.name, n.symbol_id");
+    let scan_result = match db.execute(&scan) {
         Ok(r) => r,
         Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             sparrowdb_execution::QueryResult::empty(vec![])
@@ -68,13 +51,11 @@ pub fn resolve(db: &GraphDb, name: &str, kind: AliasKind) -> Result<ResolvedSymb
         Err(e) => return Err(SoError::Storage(e)),
     };
 
-    // Build (name, symbol_id) pairs from the two parallel scans.
-    let canonical_rows: Vec<(String, String)> = names_result
+    let canonical_rows: Vec<(String, String)> = scan_result
         .rows
         .iter()
-        .zip(sids_result.rows.iter())
-        .filter_map(|(nr, sr)| {
-            if let (Ok(n), Ok(s)) = (str_from_value(&nr[0]), str_from_value(&sr[0])) {
+        .filter_map(|row| {
+            if let (Ok(n), Ok(s)) = (str_from_value(&row[0]), str_from_value(&row[1])) {
                 Some((n.to_string(), s.to_string()))
             } else {
                 None

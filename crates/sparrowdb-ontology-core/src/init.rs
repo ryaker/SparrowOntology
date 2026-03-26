@@ -6,19 +6,19 @@ use sparrowdb_execution::Value as ExecValue;
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::SoError;
+use crate::hierarchy::check_no_cycle;
 use crate::model::{
     canonical_world_model, canonical_world_model_properties, canonical_world_model_relations,
     personal_knowledge_classes, personal_knowledge_properties, personal_knowledge_relations,
     professional_network_classes, professional_network_properties, professional_network_relations,
-    research_notes_classes, research_notes_properties, research_notes_relations,
-    AliasKind, OntologyClass, OntologyProperty, OntologyRelation, PropertyType,
+    research_notes_classes, research_notes_properties, research_notes_relations, AliasKind,
+    OntologyClass, OntologyProperty, OntologyRelation, PropertyType,
 };
 use crate::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL,
 };
 use crate::resolution::{escape_cypher_string, resolve};
-use crate::hierarchy::check_no_cycle;
 
 // ── Public types ──────────────────────────────────────────────────────────────
 
@@ -137,20 +137,24 @@ pub fn init(
     // Create DOMAIN and RANGE edges for each relation
     for r in &relations {
         let rel_id = relation_ids[&r.name];
-        let domain_id = *class_ids.get(&r.domain).ok_or_else(|| SoError::UnknownSymbol {
-            name: r.domain.clone(),
-            kind: "class".to_string(),
-            valid: class_ids.keys().cloned().collect(),
-            closest_match: None,
-            suggestion: None,
-        })?;
-        let range_id = *class_ids.get(&r.range).ok_or_else(|| SoError::UnknownSymbol {
-            name: r.range.clone(),
-            kind: "class".to_string(),
-            valid: class_ids.keys().cloned().collect(),
-            closest_match: None,
-            suggestion: None,
-        })?;
+        let domain_id = *class_ids
+            .get(&r.domain)
+            .ok_or_else(|| SoError::UnknownSymbol {
+                name: r.domain.clone(),
+                kind: "class".to_string(),
+                valid: class_ids.keys().cloned().collect(),
+                closest_match: None,
+                suggestion: None,
+            })?;
+        let range_id = *class_ids
+            .get(&r.range)
+            .ok_or_else(|| SoError::UnknownSymbol {
+                name: r.range.clone(),
+                kind: "class".to_string(),
+                valid: class_ids.keys().cloned().collect(),
+                closest_match: None,
+                suggestion: None,
+            })?;
 
         let mut tx = db.begin_write()?;
         tx.create_edge(rel_id, domain_id, DOMAIN_REL, HashMap::new())?;
@@ -167,15 +171,16 @@ pub fn init(
 
     // Create HAS_PROPERTY edges from class → property
     for p in &properties {
-        let owner_class = classes.iter().find(|c| c.name == p.owner_name).ok_or_else(|| {
-            SoError::UnknownSymbol {
+        let owner_class = classes
+            .iter()
+            .find(|c| c.name == p.owner_name)
+            .ok_or_else(|| SoError::UnknownSymbol {
                 name: p.owner_name.clone(),
                 kind: "class".to_string(),
                 valid: classes.iter().map(|c| c.name.clone()).collect(),
                 closest_match: None,
                 suggestion: None,
-            }
-        })?;
+            })?;
         let class_id = class_ids[&owner_class.name];
         let prop_id = property_ids[&p.symbol_id];
 
@@ -342,7 +347,12 @@ pub fn define_subclass(db: &GraphDb, child: &str, parent: &str) -> Result<(), So
     let parent_node_id = get_class_node_id(db, &parent_sym.canonical_name)?;
 
     let mut tx = db.begin_write()?;
-    tx.create_edge(child_node_id, parent_node_id, SUBCLASS_OF_REL, HashMap::new())?;
+    tx.create_edge(
+        child_node_id,
+        parent_node_id,
+        SUBCLASS_OF_REL,
+        HashMap::new(),
+    )?;
     tx.commit()?;
     Ok(())
 }
@@ -371,9 +381,7 @@ pub fn add_alias(
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
-        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
-            if msg.contains("unknown label") =>
-        {
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             sparrowdb_execution::QueryResult::empty(vec![])
         }
         Err(e) => return Err(SoError::Storage(e)),
@@ -510,16 +518,20 @@ pub fn add_property(
     // Create HAS_PROPERTY edge: class → property
     let class_node_id = get_class_node_id(db, &class_sym.canonical_name)?;
     let mut tx2 = db.begin_write()?;
-    tx2.create_edge(class_node_id, prop_node_id, HAS_PROPERTY_REL, HashMap::new())?;
+    tx2.create_edge(
+        class_node_id,
+        prop_node_id,
+        HAS_PROPERTY_REL,
+        HashMap::new(),
+    )?;
     tx2.commit()?;
 
     // Emit uniqueness constraint if requested
     if unique {
         let safe_class = escape_cypher_string(&class_sym.canonical_name);
         let safe_prop = escape_cypher_string(prop_name);
-        let constraint_q = format!(
-            "CREATE CONSTRAINT ON (n:{safe_class}) ASSERT n.{safe_prop} IS UNIQUE"
-        );
+        let constraint_q =
+            format!("CREATE CONSTRAINT ON (n:{safe_class}) ASSERT n.{safe_prop} IS UNIQUE");
         db.execute(&constraint_q).map_err(SoError::Storage)?;
     }
 
@@ -558,8 +570,9 @@ fn get_class_node_id(db: &GraphDb, name: &str) -> Result<NodeId, SoError> {
 
 /// Get the NodeId for a node by label and name property.
 ///
-/// Uses two single-column scans + zip (workaround for SparrowDB ≤0.1.6 inline-filter
-/// regression: `{name: '...'}` misses nodes added via WriteTx after index creation).
+/// NOTE: SparrowDB inline property filters (`{name: '...'}`) still miss nodes
+/// written via WriteTx after index creation as of 0.1.7. Use two single-column
+/// scans + zip until the upstream fix lands.
 fn get_node_id_by_name(db: &GraphDb, label: &str, name: &str) -> Result<NodeId, SoError> {
     let q_names = format!("MATCH (n:{label}) RETURN n.name");
     let q_ids = format!("MATCH (n:{label}) RETURN id(n)");
@@ -568,9 +581,7 @@ fn get_node_id_by_name(db: &GraphDb, label: &str, name: &str) -> Result<NodeId, 
     let ids_r = db.execute(&q_ids)?;
 
     for (nr, ir) in names_r.rows.iter().zip(ids_r.rows.iter()) {
-        if let (Some(ExecValue::String(n)), Some(ExecValue::Int64(id))) =
-            (nr.first(), ir.first())
-        {
+        if let (Some(ExecValue::String(n)), Some(ExecValue::Int64(id))) = (nr.first(), ir.first()) {
             if n == name {
                 return Ok(NodeId(*id as u64));
             }
@@ -586,11 +597,7 @@ fn get_node_id_by_name(db: &GraphDb, label: &str, name: &str) -> Result<NodeId, 
 }
 
 /// Get the NodeId for a node by label and symbol_id.
-fn get_node_id_by_symbol_id(
-    db: &GraphDb,
-    label: &str,
-    symbol_id: &str,
-) -> Result<NodeId, SoError> {
+fn get_node_id_by_symbol_id(db: &GraphDb, label: &str, symbol_id: &str) -> Result<NodeId, SoError> {
     let safe_sid = escape_cypher_string(symbol_id);
     let q = format!("MATCH (n:{label} {{symbol_id: '{safe_sid}'}}) RETURN id(n)");
     let result = db.execute(&q)?;
