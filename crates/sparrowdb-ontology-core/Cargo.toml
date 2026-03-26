@@ -69,3 +69,7 @@ path = "../../tests/integration/test_iri_field.rs"
 [[test]]
 name = "test_jsonld_export"
 path = "../../tests/integration/test_jsonld_export.rs"
+
+[[test]]
+name = "test_turtle_import"
+path = "../../tests/integration/test_turtle_import.rs"
