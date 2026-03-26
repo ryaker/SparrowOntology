@@ -280,7 +280,10 @@ fn foaf_idempotent_reimport() {
     // First import
     let s1 = import_turtle(&db, FOAF_REAL_TTL, ImportOptions::default()).unwrap();
     assert_eq!(s1.classes_imported, 8, "first import: expected 8 classes");
-    assert_eq!(s1.relations_imported, 8, "first import: expected 8 relations");
+    assert_eq!(
+        s1.relations_imported, 8,
+        "first import: expected 8 relations"
+    );
 
     // Second import — must succeed without error
     let s2 = import_turtle(&db, FOAF_REAL_TTL, ImportOptions::default());

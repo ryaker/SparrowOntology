@@ -150,10 +150,7 @@ pub fn validate(db: &GraphDb) -> Result<ValidationReport, SoError> {
             if !known_classes.contains(label) {
                 violations.push(ValidationViolation {
                     kind: ViolationKind::UnknownClass,
-                    message: format!(
-                        "Label '{}' is not a known class in the ontology",
-                        label
-                    ),
+                    message: format!("Label '{}' is not a known class in the ontology", label),
                 });
             }
         }
@@ -228,16 +225,17 @@ impl<'a> ValidationContext<'a> {
             if key.starts_with("__so_") {
                 continue;
             }
-            let prop = declared
-                .iter()
-                .find(|p| p.name == *key)
-                .ok_or_else(|| SoError::UnknownSymbol {
-                    name: key.clone(),
-                    kind: "property".to_string(),
-                    valid: declared.iter().map(|p| p.name.clone()).collect(),
-                    closest_match: None,
-                    suggestion: None,
-                })?;
+            let prop =
+                declared
+                    .iter()
+                    .find(|p| p.name == *key)
+                    .ok_or_else(|| SoError::UnknownSymbol {
+                        name: key.clone(),
+                        kind: "property".to_string(),
+                        valid: declared.iter().map(|p| p.name.clone()).collect(),
+                        closest_match: None,
+                        suggestion: None,
+                    })?;
             self.check_type_match(&class.canonical_name, prop, value)?;
         }
 
@@ -299,11 +297,7 @@ impl<'a> ValidationContext<'a> {
 
     /// Return true if `class_name` == `ancestor_name` OR `class_name` transitively
     /// inherits from `ancestor_name` via `__SO_SUBCLASS_OF` (up to depth 20).
-    pub fn is_subclass_of(
-        &self,
-        class_name: &str,
-        ancestor_name: &str,
-    ) -> Result<bool, SoError> {
+    pub fn is_subclass_of(&self, class_name: &str, ancestor_name: &str) -> Result<bool, SoError> {
         if class_name == ancestor_name {
             return Ok(true);
         }
@@ -381,9 +375,7 @@ impl<'a> ValidationContext<'a> {
                 _ => false,
             };
             let allowed_values: Option<Vec<String>> = match row.get(5) {
-                Some(Value::String(s)) if !s.is_empty() => {
-                    serde_json::from_str(s).ok()
-                }
+                Some(Value::String(s)) if !s.is_empty() => serde_json::from_str(s).ok(),
                 _ => None,
             };
             props.push(OntologyProperty {

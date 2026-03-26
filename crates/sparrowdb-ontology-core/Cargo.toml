@@ -73,3 +73,11 @@ path = "../../tests/integration/test_jsonld_export.rs"
 [[test]]
 name = "test_turtle_import"
 path = "../../tests/integration/test_turtle_import.rs"
+
+[[test]]
+name = "test_foaf_import"
+path = "../../tests/integration/test_foaf_import.rs"
+
+[[test]]
+name = "test_schemaorg_import"
+path = "../../tests/integration/test_schemaorg_import.rs"

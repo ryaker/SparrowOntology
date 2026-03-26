@@ -77,7 +77,10 @@ fn iv(n: i64) -> StoreValue {
 }
 
 fn kv(pairs: &[(&str, StoreValue)]) -> HashMap<String, StoreValue> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect()
 }
 
 fn now_ms() -> i64 {
@@ -194,9 +197,7 @@ fn export_classes(db: &GraphDb) -> Result<Vec<OntologyClass>, SoError> {
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
-        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
-            if msg.contains("unknown label") =>
-        {
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             return Ok(vec![]);
         }
         Err(e) => return Err(SoError::Storage(e)),
@@ -226,9 +227,7 @@ fn export_relations(db: &GraphDb) -> Result<Vec<OntologyRelation>, SoError> {
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
-        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
-            if msg.contains("unknown label") =>
-        {
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             return Ok(vec![]);
         }
         Err(e) => return Err(SoError::Storage(e)),
@@ -326,9 +325,7 @@ fn export_properties(
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
-        Err(sparrowdb_common::Error::InvalidArgument(ref msg))
-            if msg.contains("unknown label") =>
-        {
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
             return Ok(vec![]);
         }
         Err(e) => return Err(SoError::Storage(e)),
@@ -480,7 +477,11 @@ pub fn import_schema(
     let class_nid_by_name: HashMap<String, NodeId> = snapshot
         .classes
         .iter()
-        .filter_map(|c| class_node_ids.get(&c.symbol_id).map(|&id| (c.name.clone(), id)))
+        .filter_map(|c| {
+            class_node_ids
+                .get(&c.symbol_id)
+                .map(|&id| (c.name.clone(), id))
+        })
         .collect();
 
     for r in &snapshot.relations {
@@ -522,9 +523,8 @@ pub fn import_schema(
             if let Some((_, ref class_name)) = class_info_by_sid.get(&p.owner_symbol_id) {
                 let safe_class = escape_cypher_string(class_name);
                 let safe_prop = escape_cypher_string(&p.name);
-                let cq = format!(
-                    "CREATE CONSTRAINT ON (n:{safe_class}) ASSERT n.{safe_prop} IS UNIQUE"
-                );
+                let cq =
+                    format!("CREATE CONSTRAINT ON (n:{safe_class}) ASSERT n.{safe_prop} IS UNIQUE");
                 db.execute(&cq).map_err(SoError::Storage)?;
             }
         }

@@ -557,9 +557,24 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
     let include_subclasses = args["include_subclasses"].as_bool().unwrap_or(false);
     let limit = args["limit"].as_u64().unwrap_or(20) as usize;
 
+    // Validate limit > 0
+    if limit == 0 {
+        return Err(mcp_error(
+            -32602,
+            "Invalid param: limit must be greater than 0",
+            json!({"limit": limit}),
+        ));
+    }
+
     // Support both cursor and offset-based pagination. Cursor takes precedence.
     let offset = if let Some(cursor_str) = args["cursor"].as_str() {
-        cursor_to_offset(cursor_str).unwrap_or(0)
+        cursor_to_offset(cursor_str).ok_or_else(|| {
+            mcp_error(
+                -32602,
+                "Invalid cursor: malformed or expired",
+                json!({"cursor": cursor_str}),
+            )
+        })?
     } else {
         args["offset"].as_u64().unwrap_or(0) as usize
     };

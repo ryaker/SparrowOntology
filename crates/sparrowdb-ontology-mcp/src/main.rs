@@ -169,10 +169,7 @@ async fn run_http(db: sparrowdb::GraphDb, port: u16) {
         }
     }
 
-    async fn mcp_endpoint(
-        State(db): State<SharedDb>,
-        body: String,
-    ) -> Response {
+    async fn mcp_endpoint(State(db): State<SharedDb>, body: String) -> Response {
         let req = match serde_json::from_str::<JsonRpcRequest>(&body) {
             Ok(r) => r,
             Err(e) => {
@@ -198,7 +195,9 @@ async fn run_http(db: sparrowdb::GraphDb, port: u16) {
                         jsonrpc: "2.0".into(),
                         id: req.id,
                         result: None,
-                        error: Some(json!({"code": -32603, "message": "Internal error: db lock poisoned"})),
+                        error: Some(
+                            json!({"code": -32603, "message": "Internal error: db lock poisoned"}),
+                        ),
                     };
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
@@ -210,7 +209,11 @@ async fn run_http(db: sparrowdb::GraphDb, port: u16) {
             handle_request(&guard, req)
         };
 
-        (StatusCode::OK, axum::Json(serde_json::to_value(resp).unwrap())).into_response()
+        (
+            StatusCode::OK,
+            axum::Json(serde_json::to_value(resp).unwrap()),
+        )
+            .into_response()
     }
 
     let app = Router::new()
@@ -287,8 +290,7 @@ fn handle_request(db: &sparrowdb::GraphDb, req: JsonRpcRequest) -> JsonRpcRespon
 // ── tools/call dispatcher ─────────────────────────────────────────────────────
 
 fn handle_tool_call(db: &sparrowdb::GraphDb, params: Option<Value>) -> Result<Value, Value> {
-    let params =
-        params.ok_or_else(|| json!({"code": -32602, "message": "Missing params"}))?;
+    let params = params.ok_or_else(|| json!({"code": -32602, "message": "Missing params"}))?;
     let tool_name = params["name"]
         .as_str()
         .ok_or_else(|| json!({"code": -32602, "message": "Missing tool name"}))?;
@@ -301,7 +303,10 @@ fn handle_tool_call(db: &sparrowdb::GraphDb, params: Option<Value>) -> Result<Va
         // without surfacing the detail. Wrap here so Claude sees the full error.
         Err(e) => {
             let text = {
-                let msg = e.get("message").and_then(|m| m.as_str()).unwrap_or("Tool error");
+                let msg = e
+                    .get("message")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("Tool error");
                 let data = e.get("data");
                 match data {
                     Some(d) if !d.is_null() => format!(

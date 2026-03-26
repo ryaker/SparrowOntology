@@ -14,8 +14,10 @@ fn initialized_db() -> (tempfile::TempDir, GraphDb) {
 
 fn call(db: &GraphDb, tool: &str, params: Value) -> Value {
     let result = handle_tool_call(db, tool, Some(params)).unwrap();
-    let text = result["content"][0]["text"].as_str().unwrap_or("{}");
-    serde_json::from_str(text).unwrap_or(json!({}))
+    let text = result["content"][0]["text"]
+        .as_str()
+        .expect("tool response must have text content");
+    serde_json::from_str(text).expect("tool response must be valid JSON")
 }
 
 // ── Pagination: find_entities ─────────────────────────────────────────────────

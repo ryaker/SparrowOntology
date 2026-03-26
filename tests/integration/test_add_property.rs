@@ -52,7 +52,8 @@ fn add_property_variant_datatype() {
 #[test]
 fn add_property_unknown_class_returns_error() {
     let (_dir, db) = initialized_db();
-    let err = add_property(&db, "NonExistentClass", "foo", "string", false, false, None).unwrap_err();
+    let err =
+        add_property(&db, "NonExistentClass", "foo", "string", false, false, None).unwrap_err();
     assert!(
         matches!(err, SoError::UnknownSymbol { .. }),
         "expected UnknownSymbol, got: {err:?}"
@@ -107,8 +108,14 @@ fn add_property_validates_entity_with_new_prop() {
 
     let ctx = ValidationContext::new(&db);
     let mut props = HashMap::new();
-    props.insert("name".to_string(), PropertyValue::String("My task".to_string()));
-    props.insert("due_date".to_string(), PropertyValue::String("2026-03-22".to_string()));
+    props.insert(
+        "name".to_string(),
+        PropertyValue::String("My task".to_string()),
+    );
+    props.insert(
+        "due_date".to_string(),
+        PropertyValue::String("2026-03-22".to_string()),
+    );
 
     // Should pass — due_date is now declared as a date property
     let result = ctx.validate_entity("Task", &props, true);
@@ -143,7 +150,10 @@ fn add_property_unique_stores_flag() {
     let ctx = ValidationContext::new(&db);
     let declared = ctx.get_properties_for_class(&prop.owner_symbol_id).unwrap();
     let found = declared.iter().find(|p| p.name == "badge_id").unwrap();
-    assert!(found.unique, "unique flag should round-trip through storage");
+    assert!(
+        found.unique,
+        "unique flag should round-trip through storage"
+    );
 }
 
 #[test]
@@ -157,7 +167,11 @@ fn add_property_allowed_values_enforced() {
         "string",
         false,
         false,
-        Some(vec!["pass".to_string(), "fail".to_string(), "skip".to_string()]),
+        Some(vec![
+            "pass".to_string(),
+            "fail".to_string(),
+            "skip".to_string(),
+        ]),
     )
     .unwrap();
 
@@ -165,12 +179,21 @@ fn add_property_allowed_values_enforced() {
 
     // Valid value — should pass
     let mut props = HashMap::new();
-    props.insert("name".to_string(), PropertyValue::String("Fix bug".to_string()));
-    props.insert("result_code".to_string(), PropertyValue::String("pass".to_string()));
+    props.insert(
+        "name".to_string(),
+        PropertyValue::String("Fix bug".to_string()),
+    );
+    props.insert(
+        "result_code".to_string(),
+        PropertyValue::String("pass".to_string()),
+    );
     assert!(ctx.validate_entity("Task", &props, true).is_ok());
 
     // Invalid value — should fail with EnumViolation
-    props.insert("result_code".to_string(), PropertyValue::String("unknown".to_string()));
+    props.insert(
+        "result_code".to_string(),
+        PropertyValue::String("unknown".to_string()),
+    );
     let err = ctx.validate_entity("Task", &props, true).unwrap_err();
     assert!(
         matches!(err, SoError::EnumViolation { ref value, .. } if value == "unknown"),
@@ -182,7 +205,16 @@ fn add_property_allowed_values_enforced() {
 fn add_property_allowed_values_round_trips() {
     let (_dir, db) = initialized_db();
     let allowed = vec!["draft".to_string(), "published".to_string()];
-    let prop = add_property(&db, "Decision", "state", "string", false, false, Some(allowed.clone())).unwrap();
+    let prop = add_property(
+        &db,
+        "Decision",
+        "state",
+        "string",
+        false,
+        false,
+        Some(allowed.clone()),
+    )
+    .unwrap();
     assert_eq!(prop.allowed_values.as_deref(), Some(allowed.as_slice()));
 
     // Verify it round-trips through storage

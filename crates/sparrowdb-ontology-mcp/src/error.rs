@@ -10,7 +10,13 @@ use sparrowdb_ontology_core::SoError;
 /// - `suggestion`: actionable hint (present for UnknownSymbol, DomainViolation, RangeViolation)
 pub fn so_error_to_mcp(e: &SoError) -> Value {
     match e {
-        SoError::UnknownSymbol { name, kind, valid, closest_match, suggestion: fuzzy_suggestion } => {
+        SoError::UnknownSymbol {
+            name,
+            kind,
+            valid,
+            closest_match,
+            suggestion: fuzzy_suggestion,
+        } => {
             let suggestion = if let Some(s) = fuzzy_suggestion {
                 s.clone()
             } else if valid.is_empty() {
@@ -33,7 +39,11 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             obj
         }
 
-        SoError::AliasConflict { alias, existing, kind } => {
+        SoError::AliasConflict {
+            alias,
+            existing,
+            kind,
+        } => {
             json!({
                 "error_kind": "AliasConflict",
                 "detail": e.to_string(),
@@ -52,7 +62,11 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
-        SoError::DomainViolation { relation, expected, actual } => {
+        SoError::DomainViolation {
+            relation,
+            expected,
+            actual,
+        } => {
             json!({
                 "error_kind": "DomainViolation",
                 "detail": e.to_string(),
@@ -66,7 +80,11 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
-        SoError::RangeViolation { relation, expected, actual } => {
+        SoError::RangeViolation {
+            relation,
+            expected,
+            actual,
+        } => {
             json!({
                 "error_kind": "RangeViolation",
                 "detail": e.to_string(),
@@ -89,7 +107,12 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
-        SoError::TypeMismatch { class, property, expected, actual } => {
+        SoError::TypeMismatch {
+            class,
+            property,
+            expected,
+            actual,
+        } => {
             json!({
                 "error_kind": "TypeMismatch",
                 "detail": e.to_string(),
@@ -142,7 +165,12 @@ pub fn so_error_to_mcp(e: &SoError) -> Value {
             })
         }
 
-        SoError::EnumViolation { ref property, ref value, ref allowed, .. } => {
+        SoError::EnumViolation {
+            ref property,
+            ref value,
+            ref allowed,
+            ..
+        } => {
             json!({
                 "error_kind": "EnumViolation",
                 "detail": e.to_string(),
@@ -183,7 +211,13 @@ pub fn mcp_error(code: i64, message: &str, data: Value) -> Value {
 pub fn so_error_to_mcp_error(code: i64, context: &str, e: &SoError) -> Value {
     let data = so_error_to_mcp(e);
     let message = match e {
-        SoError::UnknownSymbol { name: _, kind: _, valid: _, closest_match: Some(_), suggestion: Some(s) } => {
+        SoError::UnknownSymbol {
+            name: _,
+            kind: _,
+            valid: _,
+            closest_match: Some(_),
+            suggestion: Some(s),
+        } => {
             format!("{context}: {s}")
         }
         _ => context.to_string(),

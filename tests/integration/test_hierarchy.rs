@@ -40,14 +40,24 @@ fn initialized_db() -> (tempfile::TempDir, GraphDb) {
 #[test]
 fn define_subclass_succeeds() {
     let (_dir, db) = initialized_db();
-    seed_test_class(&db, "emp-001", "Employee", "A person employed by an organization");
+    seed_test_class(
+        &db,
+        "emp-001",
+        "Employee",
+        "A person employed by an organization",
+    );
     define_subclass(&db, "Employee", "Person").unwrap();
 }
 
 #[test]
 fn subclass_validate_relationship_passes() {
     let (_dir, db) = initialized_db();
-    seed_test_class(&db, "emp-001", "Employee", "A person employed by an organization");
+    seed_test_class(
+        &db,
+        "emp-001",
+        "Employee",
+        "A person employed by an organization",
+    );
     define_subclass(&db, "Employee", "Person").unwrap();
 
     let ctx = ValidationContext::new(&db);
@@ -80,7 +90,12 @@ fn define_subclass_cycle_returns_error() {
 #[test]
 fn inherited_required_property_enforced_on_create() {
     let (_dir, db) = initialized_db();
-    seed_test_class(&db, "emp-001", "Employee", "A person employed by an organization");
+    seed_test_class(
+        &db,
+        "emp-001",
+        "Employee",
+        "A person employed by an organization",
+    );
     define_subclass(&db, "Employee", "Person").unwrap();
     // Employee has no own properties — it inherits `name` (required) from Person.
 
@@ -97,12 +112,20 @@ fn inherited_required_property_enforced_on_create() {
 #[test]
 fn inherited_required_property_satisfied_on_create() {
     let (_dir, db) = initialized_db();
-    seed_test_class(&db, "emp-002", "Employee", "A person employed by an organization");
+    seed_test_class(
+        &db,
+        "emp-002",
+        "Employee",
+        "A person employed by an organization",
+    );
     define_subclass(&db, "Employee", "Person").unwrap();
 
     let ctx = ValidationContext::new(&db);
     let mut props: HashMap<String, PropertyValue> = HashMap::new();
-    props.insert("name".to_string(), PropertyValue::String("Alice".to_string()));
+    props.insert(
+        "name".to_string(),
+        PropertyValue::String("Alice".to_string()),
+    );
     let result = ctx.validate_entity("Employee", &props, true);
     assert!(result.is_ok(), "expected Ok, got: {result:?}");
 }
@@ -120,7 +143,10 @@ fn child_property_overrides_parent_on_validate() {
     let empty: HashMap<String, PropertyValue> = HashMap::new();
     // Should succeed because Employee's own `name` is optional (not required).
     let result = ctx.validate_entity("Employee", &empty, true);
-    assert!(result.is_ok(), "expected Ok (child overrides parent required), got: {result:?}");
+    assert!(
+        result.is_ok(),
+        "expected Ok (child overrides parent required), got: {result:?}"
+    );
 }
 
 /// Multi-level inheritance: GradStudent → Student → Person.
@@ -135,7 +161,9 @@ fn multi_level_inheritance_enforces_grandparent_required_property() {
 
     let ctx = ValidationContext::new(&db);
     let empty: HashMap<String, PropertyValue> = HashMap::new();
-    let err = ctx.validate_entity("GradStudent", &empty, true).unwrap_err();
+    let err = ctx
+        .validate_entity("GradStudent", &empty, true)
+        .unwrap_err();
     assert!(
         matches!(err, SoError::RequiredPropertyMissing { ref property, .. } if property == "name"),
         "expected RequiredPropertyMissing(name) from grandparent Person, got: {err:?}"

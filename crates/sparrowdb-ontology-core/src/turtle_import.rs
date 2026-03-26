@@ -274,10 +274,7 @@ pub fn import_turtle(
     let iri_to_name: HashMap<String, String> = all_iris
         .iter()
         .map(|iri| {
-            let name = labels
-                .get(*iri)
-                .cloned()
-                .unwrap_or_else(|| local_name(iri));
+            let name = labels.get(*iri).cloned().unwrap_or_else(|| local_name(iri));
             ((*iri).clone(), name)
         })
         .collect();
@@ -291,7 +288,10 @@ pub fn import_turtle(
 
     // 4a. Import classes
     for iri in &class_iris {
-        let name = iri_to_name.get(iri).cloned().unwrap_or_else(|| local_name(iri));
+        let name = iri_to_name
+            .get(iri)
+            .cloned()
+            .unwrap_or_else(|| local_name(iri));
         let desc = comments.get(iri).cloned().unwrap_or_default();
         match write_class_node(db, &name, &desc, iri) {
             Ok(_) => classes_imported += 1,
@@ -304,9 +304,7 @@ pub fn import_turtle(
         let child_name = match iri_to_name.get(child_iri) {
             Some(n) => n.clone(),
             None => {
-                warnings.push(format!(
-                    "subclass: unknown child IRI {child_iri} — skipped"
-                ));
+                warnings.push(format!("subclass: unknown child IRI {child_iri} — skipped"));
                 continue;
             }
         };
@@ -333,7 +331,10 @@ pub fn import_turtle(
 
     // 4c. Import relations
     for iri in &prop_iris {
-        let name = iri_to_name.get(iri).cloned().unwrap_or_else(|| local_name(iri));
+        let name = iri_to_name
+            .get(iri)
+            .cloned()
+            .unwrap_or_else(|| local_name(iri));
         let desc = comments.get(iri).cloned().unwrap_or_default();
         let domain = resolve_domain_range(&domains, iri, &iri_to_name, &opts.domain_range_strategy);
         let range = resolve_domain_range(&ranges, iri, &iri_to_name, &opts.domain_range_strategy);
@@ -357,7 +358,9 @@ pub fn import_turtle(
         for alt in alts {
             match add_alias(db, alt, kind.clone(), &name) {
                 Ok(_) => aliases_imported += 1,
-                Err(SoError::AliasConflict { alias, existing, .. }) => {
+                Err(SoError::AliasConflict {
+                    alias, existing, ..
+                }) => {
                     warnings.push(format!(
                         "alias '{alias}' already registered for '{existing}' — skipped"
                     ));
@@ -394,16 +397,12 @@ fn resolve_domain_range(
 ) -> Option<String> {
     let values = map.get(prop_iri)?;
     match strategy {
-        DomainRangeStrategy::FirstOnly => values
-            .first()
-            .and_then(|iri| iri_to_name.get(iri))
-            .cloned(),
+        DomainRangeStrategy::FirstOnly => {
+            values.first().and_then(|iri| iri_to_name.get(iri)).cloned()
+        }
         DomainRangeStrategy::Unconstrained => {
             if values.len() == 1 {
-                values
-                    .first()
-                    .and_then(|iri| iri_to_name.get(iri))
-                    .cloned()
+                values.first().and_then(|iri| iri_to_name.get(iri)).cloned()
             } else {
                 None
             }
@@ -436,7 +435,10 @@ fn now_ms() -> i64 {
 }
 
 fn kv(pairs: &[(&str, StoreValue)]) -> std::collections::HashMap<String, StoreValue> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect()
 }
 
 /// Write (or overwrite) a `__SO_Class` node. Returns the NodeId.
@@ -501,14 +503,24 @@ fn write_relation_node(
         if let Ok(domain_nid) = get_class_node_id(db, dname) {
             let mut tx2 = db.begin_write()?;
             // Ignore duplicate-edge errors — idempotent intent
-            let _ = tx2.create_edge(rel_nid, domain_nid, DOMAIN_REL, std::collections::HashMap::new());
+            let _ = tx2.create_edge(
+                rel_nid,
+                domain_nid,
+                DOMAIN_REL,
+                std::collections::HashMap::new(),
+            );
             tx2.commit()?;
         }
     }
     if let Some(rname) = range_name {
         if let Ok(range_nid) = get_class_node_id(db, rname) {
             let mut tx3 = db.begin_write()?;
-            let _ = tx3.create_edge(rel_nid, range_nid, RANGE_REL, std::collections::HashMap::new());
+            let _ = tx3.create_edge(
+                rel_nid,
+                range_nid,
+                RANGE_REL,
+                std::collections::HashMap::new(),
+            );
             tx3.commit()?;
         }
     }
@@ -542,9 +554,7 @@ fn get_class_node_id(db: &GraphDb, name: &str) -> Result<NodeId, SoError> {
     let ids_r = db.execute(&q_ids).map_err(SoError::Storage)?;
 
     for (nr, ir) in names_r.rows.iter().zip(ids_r.rows.iter()) {
-        if let (Some(ExecValue::String(n)), Some(ExecValue::Int64(id))) =
-            (nr.first(), ir.first())
-        {
+        if let (Some(ExecValue::String(n)), Some(ExecValue::Int64(id))) = (nr.first(), ir.first()) {
             if n == name {
                 return Ok(NodeId(*id as u64));
             }

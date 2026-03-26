@@ -3,7 +3,6 @@
 /// All tests call `handle_tool_call` in-process (same pattern as Phase 2),
 /// but validate CLI-layer behaviors: init result counts, alias resolution,
 /// error suggestion fields, etc.
-
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_core::{init, SoError};
@@ -117,9 +116,9 @@ fn cli_show_summary() {
     let (_dir, db) = initialized_db();
     let result = call(&db, "get_ontology", json!({}));
 
-    let classes = result["classes"]
+    let classes = result["classes"]["data"]
         .as_array()
-        .expect("get_ontology should return 'classes' array");
+        .expect("get_ontology should return 'classes.data' array");
     assert_eq!(
         classes.len(),
         10,
@@ -135,9 +134,9 @@ fn cli_show_full() {
     let (_dir, db) = initialized_db();
     let result = call(&db, "get_ontology", json!({}));
 
-    let classes = result["classes"]
+    let classes = result["classes"]["data"]
         .as_array()
-        .expect("get_ontology should return 'classes' array");
+        .expect("get_ontology should return 'classes.data' array");
 
     // In full mode, each class should include a "properties" array
     // At least one class (Person) should have non-empty properties
@@ -150,7 +149,10 @@ fn cli_show_full() {
     assert!(
         has_properties,
         "At least one class should have properties defined in full ontology view, classes: {:?}",
-        classes.iter().map(|c| c["name"].as_str()).collect::<Vec<_>>()
+        classes
+            .iter()
+            .map(|c| c["name"].as_str())
+            .collect::<Vec<_>>()
     );
 }
 
@@ -281,11 +283,19 @@ fn cli_all_commands_exit_ok() {
 
     // get_ontology
     let r = handle_tool_call(&db, "get_ontology", Some(json!({})));
-    assert!(r.is_ok(), "get_ontology should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "get_ontology should return Ok, got: {:?}",
+        r.err()
+    );
 
     // define_class
     let r = handle_tool_call(&db, "define_class", Some(json!({"name": "Employee"})));
-    assert!(r.is_ok(), "define_class should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "define_class should return Ok, got: {:?}",
+        r.err()
+    );
 
     // define_relation
     let r = handle_tool_call(
@@ -293,7 +303,11 @@ fn cli_all_commands_exit_ok() {
         "define_relation",
         Some(json!({"name": "MANAGES", "domain": "Person", "range": "Project"})),
     );
-    assert!(r.is_ok(), "define_relation should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "define_relation should return Ok, got: {:?}",
+        r.err()
+    );
 
     // add_alias
     let r = handle_tool_call(
@@ -309,7 +323,11 @@ fn cli_all_commands_exit_ok() {
         "resolve_name",
         Some(json!({"name": "Person", "kind": "class"})),
     );
-    assert!(r.is_ok(), "resolve_name should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "resolve_name should return Ok, got: {:?}",
+        r.err()
+    );
 
     // define_subclass
     let r = handle_tool_call(
@@ -317,7 +335,11 @@ fn cli_all_commands_exit_ok() {
         "define_subclass",
         Some(json!({"child": "Employee", "parent": "Person"})),
     );
-    assert!(r.is_ok(), "define_subclass should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "define_subclass should return Ok, got: {:?}",
+        r.err()
+    );
 
     // create_entity
     let r = handle_tool_call(
@@ -325,7 +347,11 @@ fn cli_all_commands_exit_ok() {
         "create_entity",
         Some(json!({"label": "Person", "properties": {"name": "Bob"}})),
     );
-    assert!(r.is_ok(), "create_entity should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "create_entity should return Ok, got: {:?}",
+        r.err()
+    );
 
     // validate
     let r = handle_tool_call(&db, "validate", Some(json!({"scope": "full_graph"})));
@@ -337,7 +363,11 @@ fn cli_all_commands_exit_ok() {
         "explain_symbol",
         Some(json!({"name": "Person", "kind": "class"})),
     );
-    assert!(r.is_ok(), "explain_symbol should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "explain_symbol should return Ok, got: {:?}",
+        r.err()
+    );
 
     // explain_symbol (relation)
     let r = handle_tool_call(
@@ -345,7 +375,11 @@ fn cli_all_commands_exit_ok() {
         "explain_symbol",
         Some(json!({"name": "WORKS_FOR", "kind": "relation"})),
     );
-    assert!(r.is_ok(), "explain_symbol WORKS_FOR should return Ok, got: {:?}", r.err());
+    assert!(
+        r.is_ok(),
+        "explain_symbol WORKS_FOR should return Ok, got: {:?}",
+        r.err()
+    );
 }
 
 // ── AC11: cli_error_output_has_suggestion ────────────────────────────────────

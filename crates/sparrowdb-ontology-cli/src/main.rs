@@ -5,7 +5,10 @@ use std::process;
 use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{export_json_ld, import_records, import_turtle, init, DomainRangeStrategy, ImportOptions, ImportTemplate, StarterKind};
+use sparrowdb_ontology_core::{
+    export_json_ld, import_records, import_turtle, init, DomainRangeStrategy, ImportOptions,
+    ImportTemplate, StarterKind,
+};
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
 
 // ── CLI definition ────────────────────────────────────────────────────────────
@@ -215,42 +218,70 @@ fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Commands::Init { db, blank, force } => cmd_init(&db, blank, force),
         Commands::Show { db, full, json } => cmd_show(&db, full, json),
-        Commands::DefineClass { name, db, desc, iri } => cmd_define_class(&db, &name, desc.as_deref(), iri.as_deref()),
-        Commands::DefineRelation { name, db, from, to, desc, iri } => {
-            cmd_define_relation(&db, &name, &from, &to, desc.as_deref(), iri.as_deref())
-        }
-        Commands::AddProperty { owner_prop, db, prop_type, required, default } => {
-            cmd_add_property(&db, &owner_prop, &prop_type, required, default.as_deref())
-        }
-        Commands::AddAlias { alias, db, kind, target } => {
-            cmd_add_alias(&db, &alias, &kind, &target)
-        }
+        Commands::DefineClass {
+            name,
+            db,
+            desc,
+            iri,
+        } => cmd_define_class(&db, &name, desc.as_deref(), iri.as_deref()),
+        Commands::DefineRelation {
+            name,
+            db,
+            from,
+            to,
+            desc,
+            iri,
+        } => cmd_define_relation(&db, &name, &from, &to, desc.as_deref(), iri.as_deref()),
+        Commands::AddProperty {
+            owner_prop,
+            db,
+            prop_type,
+            required,
+            default,
+        } => cmd_add_property(&db, &owner_prop, &prop_type, required, default.as_deref()),
+        Commands::AddAlias {
+            alias,
+            db,
+            kind,
+            target,
+        } => cmd_add_alias(&db, &alias, &kind, &target),
         Commands::AddSubclass { child, db, parent } => cmd_add_subclass(&db, &child, &parent),
-        Commands::AddSubproperty { child, db, parent } => {
-            cmd_add_subproperty(&db, &child, &parent)
-        }
+        Commands::AddSubproperty { child, db, parent } => cmd_add_subproperty(&db, &child, &parent),
         Commands::Validate { db, ontology_only } => cmd_validate(&db, ontology_only),
         Commands::Resolve { name, db, kind } => cmd_resolve(&db, &name, &kind),
         Commands::CreateEntity { label, db, props } => cmd_create_entity(&db, &label, &props),
-        Commands::CreateRelationship { db, from, rel_type, to } => {
-            cmd_create_relationship(&db, &from, &rel_type, &to)
-        }
+        Commands::CreateRelationship {
+            db,
+            from,
+            rel_type,
+            to,
+        } => cmd_create_relationship(&db, &from, &rel_type, &to),
         Commands::Explain { name, db, kind } => cmd_explain(&db, &name, &kind),
         Commands::Stats { db } => cmd_stats(&db),
-        Commands::ExportJsonLd { db, output, pretty } => cmd_export_json_ld(&db, output.as_deref(), pretty),
-        Commands::Import { db, file, template, dry_run, skip_errors } => {
-            cmd_import(&db, &file, &template, dry_run, skip_errors)
+        Commands::ExportJsonLd { db, output, pretty } => {
+            cmd_export_json_ld(&db, output.as_deref(), pretty)
         }
-        Commands::ImportTurtle { file, db, base_iri, strategy } => {
-            cmd_import_turtle(&db, &file, base_iri, &strategy)
-        }
+        Commands::Import {
+            db,
+            file,
+            template,
+            dry_run,
+            skip_errors,
+        } => cmd_import(&db, &file, &template, dry_run, skip_errors),
+        Commands::ImportTurtle {
+            file,
+            db,
+            base_iri,
+            strategy,
+        } => cmd_import_turtle(&db, &file, base_iri, &strategy),
     }
 }
 
 // ── Database opener ───────────────────────────────────────────────────────────
 
 fn open_db(path: &PathBuf) -> Result<GraphDb, String> {
-    GraphDb::open(path).map_err(|e| format!("Error: failed to open database at {}: {e}", path.display()))
+    GraphDb::open(path)
+        .map_err(|e| format!("Error: failed to open database at {}: {e}", path.display()))
 }
 
 // ── Error rendering ───────────────────────────────────────────────────────────
@@ -280,7 +311,11 @@ fn extract_result(result: &Value) -> Value {
 
 fn cmd_init(db_path: &PathBuf, blank: bool, force: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
-    let starter = if blank { Some(StarterKind::Blank) } else { None };
+    let starter = if blank {
+        Some(StarterKind::Blank)
+    } else {
+        None
+    };
     match init(&db, starter, force) {
         Ok(result) => {
             println!(
@@ -298,18 +333,27 @@ fn cmd_init(db_path: &PathBuf, blank: bool, force: bool) -> Result<(), String> {
 
 fn cmd_show(db_path: &PathBuf, full: bool, as_json: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
-    let result = handle_tool_call(&db, "get_ontology", Some(json!({})))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "get_ontology", Some(json!({}))).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
     if as_json {
-        println!("{}", serde_json::to_string_pretty(&inner).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&inner).unwrap_or_default()
+        );
         return Ok(());
     }
 
     // Human-readable
-    let classes = inner["classes"].as_array().cloned().unwrap_or_default();
-    let relations = inner["relations"].as_array().cloned().unwrap_or_default();
+    let classes = inner["classes"]["data"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
+    let relations = inner["relations"]["data"]
+        .as_array()
+        .cloned()
+        .unwrap_or_default();
 
     println!("Classes ({}):", classes.len());
     for c in &classes {
@@ -319,9 +363,8 @@ fn cmd_show(db_path: &PathBuf, full: bool, as_json: bool) -> Result<(), String> 
             if props.is_empty() {
                 println!("  {name}");
             } else {
-                let prop_names: Vec<&str> = props.iter()
-                    .filter_map(|p| p["name"].as_str())
-                    .collect();
+                let prop_names: Vec<&str> =
+                    props.iter().filter_map(|p| p["name"].as_str()).collect();
                 println!("  {name}  [{}]", prop_names.join(", "));
             }
         } else {
@@ -340,7 +383,12 @@ fn cmd_show(db_path: &PathBuf, full: bool, as_json: bool) -> Result<(), String> 
     Ok(())
 }
 
-fn cmd_define_class(db_path: &PathBuf, name: &str, desc: Option<&str>, iri: Option<&str>) -> Result<(), String> {
+fn cmd_define_class(
+    db_path: &PathBuf,
+    name: &str,
+    desc: Option<&str>,
+    iri: Option<&str>,
+) -> Result<(), String> {
     let db = open_db(db_path)?;
     let mut params = json!({"name": name});
     if let Some(d) = desc {
@@ -349,8 +397,8 @@ fn cmd_define_class(db_path: &PathBuf, name: &str, desc: Option<&str>, iri: Opti
     if let Some(i) = iri {
         params["iri"] = json!(i);
     }
-    let result = handle_tool_call(&db, "define_class", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "define_class", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
     let created_name = inner["created"]["name"].as_str().unwrap_or(name);
     println!("Defined class: {created_name}");
@@ -373,8 +421,8 @@ fn cmd_define_relation(
     if let Some(i) = iri {
         params["iri"] = json!(i);
     }
-    let result = handle_tool_call(&db, "define_relation", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "define_relation", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
     let created_name = inner["created"]["name"].as_str().unwrap_or(name);
     println!("Defined relation: {created_name}  ({from} → {to})");
@@ -389,9 +437,9 @@ fn cmd_add_property(
     default: Option<&str>,
 ) -> Result<(), String> {
     // Parse "Owner.propName"
-    let (owner, prop_name) = owner_prop
-        .split_once('.')
-        .ok_or_else(|| format!("Error: owner_prop must be in the form 'ClassName.propName', got '{owner_prop}'"))?;
+    let (owner, prop_name) = owner_prop.split_once('.').ok_or_else(|| {
+        format!("Error: owner_prop must be in the form 'ClassName.propName', got '{owner_prop}'")
+    })?;
 
     let db = open_db(db_path)?;
 
@@ -402,8 +450,8 @@ fn cmd_add_property(
         "datatype": prop_type,
         "required": required,
     });
-    let result = handle_tool_call(&db, "add_property", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "add_property", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
     if let Some(created) = inner.get("created") {
         let sym = created["symbol_id"].as_str().unwrap_or("?");
@@ -416,16 +464,10 @@ fn cmd_add_property(
     Ok(())
 }
 
-fn cmd_add_alias(
-    db_path: &PathBuf,
-    alias: &str,
-    kind: &str,
-    target: &str,
-) -> Result<(), String> {
+fn cmd_add_alias(db_path: &PathBuf, alias: &str, kind: &str, target: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"alias_name": alias, "target": target, "kind": kind});
-    let result = handle_tool_call(&db, "add_alias", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result = handle_tool_call(&db, "add_alias", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
     let success = inner["success"].as_bool().unwrap_or(false);
     if success {
@@ -439,8 +481,8 @@ fn cmd_add_alias(
 fn cmd_add_subclass(db_path: &PathBuf, child: &str, parent: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"child": child, "parent": parent});
-    let result = handle_tool_call(&db, "define_subclass", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "define_subclass", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
     let success = inner["success"].as_bool().unwrap_or(false);
     if success {
@@ -452,8 +494,8 @@ fn cmd_add_subclass(db_path: &PathBuf, child: &str, parent: &str) -> Result<(), 
 fn cmd_add_subproperty(db_path: &PathBuf, child: &str, parent: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"child": child, "parent": parent});
-    let result = handle_tool_call(&db, "define_subproperty", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "define_subproperty", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
     let success = inner["success"].as_bool().unwrap_or(false);
     if success {
@@ -464,10 +506,13 @@ fn cmd_add_subproperty(db_path: &PathBuf, child: &str, parent: &str) -> Result<(
 
 fn cmd_validate(db_path: &PathBuf, ontology_only: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
-    let scope = if ontology_only { "ontology" } else { "full_graph" };
+    let scope = if ontology_only {
+        "ontology"
+    } else {
+        "full_graph"
+    };
     let params = json!({"scope": scope});
-    let result = handle_tool_call(&db, "validate", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result = handle_tool_call(&db, "validate", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
     let valid = inner["valid"].as_bool().unwrap_or(false);
@@ -491,8 +536,8 @@ fn cmd_validate(db_path: &PathBuf, ontology_only: bool) -> Result<(), String> {
 fn cmd_resolve(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"name": name, "kind": kind});
-    let result = handle_tool_call(&db, "resolve_name", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "resolve_name", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
     let canonical = inner["canonical_name"].as_str().unwrap_or(name);
@@ -510,8 +555,8 @@ fn cmd_create_entity(db_path: &PathBuf, label: &str, props_json: &str) -> Result
     let properties: Value = serde_json::from_str(props_json)
         .map_err(|e| format!("Error: invalid JSON for --props: {e}"))?;
     let params = json!({"label": label, "properties": properties});
-    let result = handle_tool_call(&db, "create_entity", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "create_entity", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
     let created = inner["created"].as_bool().unwrap_or(false);
@@ -530,8 +575,8 @@ fn cmd_create_relationship(
 ) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"from_id": from, "rel_type": rel_type, "to_id": to});
-    let result = handle_tool_call(&db, "create_relationship", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "create_relationship", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
     let created = inner["created"].as_bool().unwrap_or(false);
@@ -544,11 +589,14 @@ fn cmd_create_relationship(
 fn cmd_explain(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"name": name, "kind": kind});
-    let result = handle_tool_call(&db, "explain_symbol", Some(params))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "explain_symbol", Some(params)).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
-    println!("{}", serde_json::to_string_pretty(&inner).unwrap_or_default());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&inner).unwrap_or_default()
+    );
     Ok(())
 }
 
@@ -560,8 +608,12 @@ fn cmd_import(
     skip_errors: bool,
 ) -> Result<(), String> {
     // Load and parse the JSON template.
-    let template_bytes = std::fs::read(template_path)
-        .map_err(|e| format!("Error: cannot read template file {}: {e}", template_path.display()))?;
+    let template_bytes = std::fs::read(template_path).map_err(|e| {
+        format!(
+            "Error: cannot read template file {}: {e}",
+            template_path.display()
+        )
+    })?;
     let template: ImportTemplate = serde_json::from_slice(&template_bytes)
         .map_err(|e| format!("Error: invalid template JSON: {e}"))?;
 
@@ -585,8 +637,8 @@ fn cmd_import(
                 .collect();
             let mut rows = Vec::new();
             for (i, result) in rdr.records().enumerate() {
-                let row = result
-                    .map_err(|e| format!("Error: CSV parse error at row {}: {e}", i + 2))?;
+                let row =
+                    result.map_err(|e| format!("Error: CSV parse error at row {}: {e}", i + 2))?;
                 let map: HashMap<String, String> = headers
                     .iter()
                     .zip(row.iter())
@@ -629,7 +681,10 @@ fn cmd_import(
     let total = records.len();
 
     if dry_run {
-        println!("[dry-run] Validating {total} records against class '{}'...", template.class);
+        println!(
+            "[dry-run] Validating {total} records against class '{}'...",
+            template.class
+        );
     }
 
     let db = open_db(db_path)?;
@@ -653,7 +708,11 @@ fn cmd_import(
     Ok(())
 }
 
-fn cmd_export_json_ld(db_path: &PathBuf, output: Option<&std::path::Path>, pretty: bool) -> Result<(), String> {
+fn cmd_export_json_ld(
+    db_path: &PathBuf,
+    output: Option<&std::path::Path>,
+    pretty: bool,
+) -> Result<(), String> {
     let db = open_db(db_path)?;
     let value = export_json_ld(&db).map_err(|e| format!("Error: {e}"))?;
     let json_str = if pretty {
@@ -670,8 +729,8 @@ fn cmd_export_json_ld(db_path: &PathBuf, output: Option<&std::path::Path>, prett
 
 fn cmd_stats(db_path: &PathBuf) -> Result<(), String> {
     let db = open_db(db_path)?;
-    let result = handle_tool_call(&db, "start_here", Some(json!({})))
-        .map_err(|e| render_error(&e))?;
+    let result =
+        handle_tool_call(&db, "start_here", Some(json!({}))).map_err(|e| render_error(&e))?;
     let inner = extract_result(&result);
 
     let status = inner["status"].as_str().unwrap_or("unknown");
@@ -704,9 +763,11 @@ fn cmd_import_turtle(
         _ => DomainRangeStrategy::Unconstrained,
     };
 
-    let opts = ImportOptions { base_iri, domain_range_strategy };
-    let summary = import_turtle(&db, &ttl, opts)
-        .map_err(|e| format!("import failed: {e}"))?;
+    let opts = ImportOptions {
+        base_iri,
+        domain_range_strategy,
+    };
+    let summary = import_turtle(&db, &ttl, opts).map_err(|e| format!("import failed: {e}"))?;
 
     println!("Import complete:");
     println!("  Classes:    {}", summary.classes_imported);

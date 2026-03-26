@@ -11,7 +11,10 @@ fn initialized_db() -> (tempfile::TempDir, GraphDb) {
 }
 
 fn props(pairs: &[(&str, PropertyValue)]) -> HashMap<String, PropertyValue> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.clone())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.clone()))
+        .collect()
 }
 
 #[test]
@@ -43,7 +46,9 @@ fn validate_entity_unknown_class_returns_error() {
 fn validate_entity_missing_required_name() {
     let (_dir, db) = initialized_db();
     let ctx = ValidationContext::new(&db);
-    let err = ctx.validate_entity("Person", &props(&[]), true).unwrap_err();
+    let err = ctx
+        .validate_entity("Person", &props(&[]), true)
+        .unwrap_err();
     assert!(
         matches!(err, SoError::RequiredPropertyMissing { ref property, .. } if property == "name"),
         "expected RequiredPropertyMissing for 'name', got: {err:?}"

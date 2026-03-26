@@ -2,7 +2,6 @@
 ///
 /// All tests call `sparrowdb_ontology_mcp::tools::handle_tool_call` in-process.
 /// No binary is launched.
-
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
@@ -91,14 +90,18 @@ fn ac02_start_here_initialized() {
 fn ac03_get_ontology_returns_all() {
     let (_dir, db) = initialized_db();
     let result = call(&db, "get_ontology", json!({}));
-    let classes = result["classes"].as_array().expect("classes should be an array");
+    let classes = result["classes"]["data"]
+        .as_array()
+        .expect("classes should be an array");
     assert_eq!(
         classes.len(),
         10,
         "classes array should have 10 items, got: {}",
         classes.len()
     );
-    let relations = result["relations"].as_array().expect("relations should be an array");
+    let relations = result["relations"]["data"]
+        .as_array()
+        .expect("relations should be an array");
     assert_eq!(
         relations.len(),
         19,
@@ -306,7 +309,9 @@ fn ac11_create_relationship_valid() {
         "create_entity",
         json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
-    let alice_id = alice["node_id"].as_str().expect("node_id should be present");
+    let alice_id = alice["node_id"]
+        .as_str()
+        .expect("node_id should be present");
 
     // Create Organization node
     let acme = call(
@@ -348,7 +353,9 @@ fn ac12_create_relationship_via_alias() {
         "create_entity",
         json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
-    let alice_id = alice["node_id"].as_str().expect("node_id should be present");
+    let alice_id = alice["node_id"]
+        .as_str()
+        .expect("node_id should be present");
 
     let acme = call(
         &db,
@@ -389,7 +396,9 @@ fn ac13_create_relationship_invalid_domain() {
         "create_entity",
         json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
-    let alice_id = alice["node_id"].as_str().expect("node_id should be present");
+    let alice_id = alice["node_id"]
+        .as_str()
+        .expect("node_id should be present");
 
     // Swap from/to — Organization→Person for WORKS_FOR is wrong domain
     let err = call_err(
@@ -421,7 +430,9 @@ fn ac14_update_entity_validates() {
         "create_entity",
         json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
-    let node_id = result["node_id"].as_str().expect("node_id should be present");
+    let node_id = result["node_id"]
+        .as_str()
+        .expect("node_id should be present");
 
     // Valid update: name is a string property
     let update_result = call(
@@ -468,7 +479,9 @@ fn ac15_find_entities_by_label() {
     );
 
     let result = call(&db, "find_entities", json!({"class_name": "Person"}));
-    let entities = result["entities"].as_array().expect("entities should be an array");
+    let entities = result["entities"]
+        .as_array()
+        .expect("entities should be an array");
     assert_eq!(
         entities.len(),
         2,
@@ -499,7 +512,9 @@ fn ac16_find_entities_via_alias() {
 
     // Search via alias "Human"
     let result = call(&db, "find_entities", json!({"class_name": "Human"}));
-    let entities = result["entities"].as_array().expect("entities should be an array");
+    let entities = result["entities"]
+        .as_array()
+        .expect("entities should be an array");
     assert!(
         !entities.is_empty(),
         "should return Person entities when searching by alias 'Human', got: {result}"
@@ -523,8 +538,8 @@ fn ac17_find_entities_include_subclasses() {
     // Create an Employee node — Employee has no registered properties so use empty map
     // Use WriteTx directly to bypass validation for the subclass entity
     {
-        use std::collections::HashMap;
         use sparrowdb_storage::node_store::Value as StoreValue;
+        use std::collections::HashMap;
         let mut tx = db.begin_write().unwrap();
         let mut m: HashMap<String, StoreValue> = HashMap::new();
         m.insert("name".to_string(), StoreValue::Bytes(b"Charlie".to_vec()));
@@ -545,7 +560,9 @@ fn ac17_find_entities_include_subclasses() {
         "find_entities",
         json!({"class_name": "Person", "include_subclasses": true}),
     );
-    let entities = result["entities"].as_array().expect("entities should be an array");
+    let entities = result["entities"]
+        .as_array()
+        .expect("entities should be an array");
     assert!(
         entities.len() >= 2,
         "should find at least 2 entities (Person + Employee subclass), got: {}",
@@ -584,7 +601,9 @@ fn ac18_find_entities_with_where_filter() {
         "find_entities",
         json!({"class_name": "Person", "where": {"name": "Alice"}}),
     );
-    let entities = result["entities"].as_array().expect("entities should be an array");
+    let entities = result["entities"]
+        .as_array()
+        .expect("entities should be an array");
     assert_eq!(
         entities.len(),
         1,
@@ -704,20 +723,14 @@ fn ac22_validate_reports_violations() {
     // Directly insert a node with an unknown label using low-level WriteTx
     // (bypassing the ontology validation layer)
     {
-        use std::collections::HashMap;
         use sparrowdb_storage::node_store::Value as StoreValue;
+        use std::collections::HashMap;
         let mut tx = db.begin_write().unwrap();
-        tx.merge_node(
-            "UnknownType",
-            {
-                let mut m: HashMap<String, StoreValue> = HashMap::new();
-                m.insert(
-                    "name".to_string(),
-                    StoreValue::Bytes(b"rogue".to_vec()),
-                );
-                m
-            },
-        )
+        tx.merge_node("UnknownType", {
+            let mut m: HashMap<String, StoreValue> = HashMap::new();
+            m.insert("name".to_string(), StoreValue::Bytes(b"rogue".to_vec()));
+            m
+        })
         .unwrap();
         tx.commit().unwrap();
     }
@@ -767,7 +780,10 @@ fn ac23_validate_no_false_positives_with_relationships() {
         "create_relationship",
         json!({"from_id": alice_id, "to_id": acme_id, "relation_name": "WORKS_FOR"}),
     );
-    assert!(rel["created"].as_bool().unwrap_or(false), "relationship should be created");
+    assert!(
+        rel["created"].as_bool().unwrap_or(false),
+        "relationship should be created"
+    );
 
     // Validate — must not produce false-positive violations for "WORKS_FOR" label
     let result = call(&db, "validate", json!({"scope": "full_graph"}));

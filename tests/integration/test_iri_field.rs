@@ -18,14 +18,23 @@ fn fresh_blank_db() -> (tempfile::TempDir, GraphDb) {
 fn seed_class_with_iri(db: &GraphDb, c: &OntologyClass) {
     let iri = c.iri.as_deref().unwrap_or("");
     let mut props = std::collections::HashMap::new();
-    props.insert("symbol_id".to_string(), StoreValue::Bytes(c.symbol_id.as_bytes().to_vec()));
-    props.insert("name".to_string(), StoreValue::Bytes(c.name.as_bytes().to_vec()));
+    props.insert(
+        "symbol_id".to_string(),
+        StoreValue::Bytes(c.symbol_id.as_bytes().to_vec()),
+    );
+    props.insert(
+        "name".to_string(),
+        StoreValue::Bytes(c.name.as_bytes().to_vec()),
+    );
     props.insert(
         "description".to_string(),
         StoreValue::Bytes(c.description.as_deref().unwrap_or("").as_bytes().to_vec()),
     );
     props.insert("status".to_string(), StoreValue::Bytes(b"active".to_vec()));
-    props.insert("iri".to_string(), StoreValue::Bytes(iri.as_bytes().to_vec()));
+    props.insert(
+        "iri".to_string(),
+        StoreValue::Bytes(iri.as_bytes().to_vec()),
+    );
     props.insert("created_at".to_string(), StoreValue::Int64(c.created_at));
     props.insert("updated_at".to_string(), StoreValue::Int64(c.updated_at));
     let mut tx = db.begin_write().unwrap();
@@ -37,15 +46,27 @@ fn seed_class_with_iri(db: &GraphDb, c: &OntologyClass) {
 fn seed_relation_with_iri(db: &GraphDb, r: &OntologyRelation) {
     let iri = r.iri.as_deref().unwrap_or("");
     let mut props = std::collections::HashMap::new();
-    props.insert("symbol_id".to_string(), StoreValue::Bytes(r.symbol_id.as_bytes().to_vec()));
-    props.insert("name".to_string(), StoreValue::Bytes(r.name.as_bytes().to_vec()));
+    props.insert(
+        "symbol_id".to_string(),
+        StoreValue::Bytes(r.symbol_id.as_bytes().to_vec()),
+    );
+    props.insert(
+        "name".to_string(),
+        StoreValue::Bytes(r.name.as_bytes().to_vec()),
+    );
     props.insert(
         "description".to_string(),
         StoreValue::Bytes(r.description.as_deref().unwrap_or("").as_bytes().to_vec()),
     );
     props.insert("status".to_string(), StoreValue::Bytes(b"active".to_vec()));
-    props.insert("directed".to_string(), StoreValue::Int64(if r.directed { 1 } else { 0 }));
-    props.insert("iri".to_string(), StoreValue::Bytes(iri.as_bytes().to_vec()));
+    props.insert(
+        "directed".to_string(),
+        StoreValue::Int64(if r.directed { 1 } else { 0 }),
+    );
+    props.insert(
+        "iri".to_string(),
+        StoreValue::Bytes(iri.as_bytes().to_vec()),
+    );
     props.insert("created_at".to_string(), StoreValue::Int64(r.created_at));
     props.insert("updated_at".to_string(), StoreValue::Int64(r.updated_at));
     let mut tx = db.begin_write().unwrap();
@@ -58,13 +79,19 @@ fn seed_relation_with_iri(db: &GraphDb, r: &OntologyRelation) {
 #[test]
 fn iri_field_is_none_by_default_on_class() {
     let c = OntologyClass::new("TestClass", "A test class");
-    assert!(c.iri.is_none(), "iri should be None by default on OntologyClass");
+    assert!(
+        c.iri.is_none(),
+        "iri should be None by default on OntologyClass"
+    );
 }
 
 #[test]
 fn iri_field_is_none_by_default_on_relation() {
     let r = OntologyRelation::new("TEST_REL", "ClassA", "ClassB");
-    assert!(r.iri.is_none(), "iri should be None by default on OntologyRelation");
+    assert!(
+        r.iri.is_none(),
+        "iri should be None by default on OntologyRelation"
+    );
 }
 
 #[test]
@@ -132,7 +159,11 @@ fn iri_field_roundtrips_through_snapshot_for_relation() {
     let snap = export_schema(&db_a).unwrap();
     // Relations without DOMAIN/RANGE edges will have empty domain/range strings,
     // but the iri field should still be captured.
-    let wf = snap.relations.iter().find(|x| x.name == "WORKS_FOR").unwrap();
+    let wf = snap
+        .relations
+        .iter()
+        .find(|x| x.name == "WORKS_FOR")
+        .unwrap();
     assert_eq!(
         wf.iri.as_deref(),
         Some("https://schema.org/worksFor"),
@@ -147,7 +178,11 @@ fn iri_field_roundtrips_through_snapshot_for_relation() {
     import_schema(&db_b, &snap).unwrap();
 
     let snap2 = export_schema(&db_b).unwrap();
-    let wf2 = snap2.relations.iter().find(|x| x.name == "WORKS_FOR").unwrap();
+    let wf2 = snap2
+        .relations
+        .iter()
+        .find(|x| x.name == "WORKS_FOR")
+        .unwrap();
     assert_eq!(
         wf2.iri.as_deref(),
         Some("https://schema.org/worksFor"),
@@ -178,7 +213,15 @@ fn snapshot_without_iri_field_deserialises_with_none() {
         "subclass_edges": []
     }"#;
 
-    let snap: SchemaSnapshot = serde_json::from_str(json).expect("should deserialise without iri field");
-    let lc = snap.classes.iter().find(|c| c.name == "LegacyClass").unwrap();
-    assert!(lc.iri.is_none(), "iri should default to None when absent from JSON");
+    let snap: SchemaSnapshot =
+        serde_json::from_str(json).expect("should deserialise without iri field");
+    let lc = snap
+        .classes
+        .iter()
+        .find(|c| c.name == "LegacyClass")
+        .unwrap();
+    assert!(
+        lc.iri.is_none(),
+        "iri should default to None when absent from JSON"
+    );
 }

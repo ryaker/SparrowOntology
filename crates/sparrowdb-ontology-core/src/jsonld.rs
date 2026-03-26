@@ -112,10 +112,10 @@ pub fn export_json_ld(db: &GraphDb) -> Result<JsVal, SoError> {
 
         if let Some(ref vals) = prop.allowed_values {
             if !vals.is_empty() {
-                prop_allowed_values_by_class
-                    .entry(sid)
-                    .or_default()
-                    .insert(prop.name.as_str(), vals.iter().map(|s| s.as_str()).collect());
+                prop_allowed_values_by_class.entry(sid).or_default().insert(
+                    prop.name.as_str(),
+                    vals.iter().map(|s| s.as_str()).collect(),
+                );
             }
         }
     }
@@ -153,10 +153,7 @@ pub fn export_json_ld(db: &GraphDb) -> Result<JsVal, SoError> {
         // rdfs:subClassOf — first parent in subclass edges
         if let Some(parent_sid) = parent_sid_by_child.get(sid) {
             if let Some(parent_id) = class_id_by_sid.get(parent_sid) {
-                obj.insert(
-                    "rdfs:subClassOf".into(),
-                    json!({ "@id": parent_id }),
-                );
+                obj.insert("rdfs:subClassOf".into(), json!({ "@id": parent_id }));
             }
         }
 
