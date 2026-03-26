@@ -1,7 +1,9 @@
 use std::collections::HashMap;
+use std::str;
 
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
+use sparrowdb_common::NodeId;
 use sparrowdb_execution::Value as ExecValue;
 use sparrowdb_ontology_core::hierarchy::{expand_subclasses, expand_subproperties};
 use sparrowdb_ontology_core::model::{AliasKind, PropertyValue};
@@ -9,11 +11,80 @@ use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
-use sparrowdb_common::NodeId;
 use sparrowdb_ontology_core::{resolve, ValidationContext};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp, so_error_to_mcp_error};
+
+// ── Pagination helpers ────────────────────────────────────────────────────────
+
+/// Pagination metadata for list responses.
+#[derive(Debug, Clone)]
+struct PaginationMetadata {
+    total_count: usize,
+    offset: usize,
+    limit: usize,
+    has_more: bool,
+}
+
+impl PaginationMetadata {
+    fn new(total_count: usize, offset: usize, limit: usize) -> Self {
+        let has_more = offset + limit < total_count;
+        Self {
+            total_count,
+            offset,
+            limit,
+            has_more,
+        }
+    }
+
+    /// Returns the next cursor as a base64-encoded offset string, or None if no more results.
+    fn next_cursor(&self) -> Option<String> {
+        if self.has_more {
+            let next_offset = self.offset + self.limit;
+            let cursor = format!("offset:{}", next_offset);
+            Some(base64_encode(&cursor).unwrap_or_else(|_| format!("offset_{}", next_offset)))
+        } else {
+            None
+        }
+    }
+}
+
+/// Encode a string as base64 for opaque cursors.
+fn base64_encode(s: &str) -> Result<String, Value> {
+    let encoded = s
+        .as_bytes()
+        .iter()
+        .fold(String::new(), |acc, &byte| acc + &format!("{:02x}", byte));
+    Ok(encoded)
+}
+
+/// Decode a base64 cursor back to offset number.
+fn cursor_to_offset(cursor: &str) -> Option<usize> {
+    if cursor.starts_with("offset:") {
+        cursor[7..].parse().ok()
+    } else {
+        // Try hex decoding for backwards compat with encoded cursors
+        let mut result = String::new();
+        let bytes = cursor.as_bytes();
+        for i in (0..bytes.len()).step_by(2) {
+            if let Ok(byte_str) = str::from_utf8(&bytes[i..(i + 2).min(bytes.len())]) {
+                if let Ok(byte) = u8::from_str_radix(byte_str, 16) {
+                    result.push(byte as char);
+                } else {
+                    return None;
+                }
+            } else {
+                return None;
+            }
+        }
+        if result.starts_with("offset:") {
+            result[7..].parse().ok()
+        } else {
+            None
+        }
+    }
+}
 
 /// SparrowDB stores user-facing property names as `col_<fnv1a32>` column keys.
 /// WHERE clauses must use the column key, not the original property name.
@@ -68,13 +139,25 @@ fn execute_params_or_empty(
 
 fn str_val(row: &[ExecValue], idx: usize) -> String {
     row.get(idx)
-        .and_then(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
+        .and_then(|v| {
+            if let ExecValue::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
         .unwrap_or_default()
 }
 
 fn int_val(row: &[ExecValue], idx: usize) -> i64 {
     row.get(idx)
-        .and_then(|v| if let ExecValue::Int64(n) = v { Some(*n) } else { None })
+        .and_then(|v| {
+            if let ExecValue::Int64(n) = v {
+                Some(*n)
+            } else {
+                None
+            }
+        })
         .unwrap_or(0)
 }
 
@@ -119,7 +202,6 @@ fn props_to_store(props: &HashMap<String, PropertyValue>) -> HashMap<String, Sto
         .filter_map(|(k, v)| property_value_to_store(v).map(|sv| (k.clone(), sv)))
         .collect()
 }
-
 
 // ── Node label lookup by integer ID ──────────────────────────────────────────
 
@@ -204,13 +286,25 @@ pub fn create_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
     let store_props = props_to_store(&props);
     let node_id = {
         let mut tx = db.begin_write().map_err(|e| {
-            mcp_error(-32603, "Failed to begin write", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to begin write",
+                json!({"detail": e.to_string()}),
+            )
         })?;
-        let nid = tx
-            .merge_node(canonical_label, store_props)
-            .map_err(|e| mcp_error(-32603, "Failed to create entity", json!({"detail": e.to_string()})))?;
+        let nid = tx.merge_node(canonical_label, store_props).map_err(|e| {
+            mcp_error(
+                -32603,
+                "Failed to create entity",
+                json!({"detail": e.to_string()}),
+            )
+        })?;
         tx.commit().map_err(|e| {
-            mcp_error(-32603, "Failed to commit entity", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to commit entity",
+                json!({"detail": e.to_string()}),
+            )
         })?;
         nid.0 as i64
     };
@@ -254,10 +348,18 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
         .ok_or_else(|| mcp_error(-32602, "Missing required param: to_id", json!({})))?;
 
     let from_id: i64 = from_id_str.parse().map_err(|_| {
-        mcp_error(-32602, "from_id must be a numeric string", json!({"from_id": from_id_str}))
+        mcp_error(
+            -32602,
+            "from_id must be a numeric string",
+            json!({"from_id": from_id_str}),
+        )
     })?;
     let to_id: i64 = to_id_str.parse().map_err(|_| {
-        mcp_error(-32602, "to_id must be a numeric string", json!({"to_id": to_id_str}))
+        mcp_error(
+            -32602,
+            "to_id must be a numeric string",
+            json!({"to_id": to_id_str}),
+        )
     })?;
 
     // Step 1 & 2: look up source and target node labels
@@ -272,8 +374,18 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
 
     // Step 4: validate relationship
     let rel_resolved = ValidationContext::new(db)
-        .validate_relationship(rel_type, &source_resolved.canonical_name, &target_resolved.canonical_name)
-        .map_err(|e| mcp_error(-32602, "Relationship validation failed", so_error_to_mcp(&e)))?;
+        .validate_relationship(
+            rel_type,
+            &source_resolved.canonical_name,
+            &target_resolved.canonical_name,
+        )
+        .map_err(|e| {
+            mcp_error(
+                -32602,
+                "Relationship validation failed",
+                so_error_to_mcp(&e),
+            )
+        })?;
 
     // Step 5: build edge properties
     let mut edge_props: HashMap<String, PropertyValue> = HashMap::new();
@@ -299,15 +411,28 @@ pub fn create_relationship(db: &GraphDb, params: Option<Value>) -> Result<Value,
     // create_edge takes HashMap<String, sparrowdb_storage::node_store::Value>
     // which is the same as StoreValue
     {
-        let mut tx = db.begin_write().map_err(|e| {
-            mcp_error(-32603, "Database error", json!({"detail": e.to_string()}))
+        let mut tx = db
+            .begin_write()
+            .map_err(|e| mcp_error(-32603, "Database error", json!({"detail": e.to_string()})))?;
+        tx.create_edge(
+            src_node_id,
+            dst_node_id,
+            &rel_resolved.canonical_name,
+            store_edge_props,
+        )
+        .map_err(|e| {
+            mcp_error(
+                -32603,
+                "Failed to create relationship",
+                json!({"detail": e.to_string()}),
+            )
         })?;
-        tx.create_edge(src_node_id, dst_node_id, &rel_resolved.canonical_name, store_edge_props)
-            .map_err(|e| {
-                mcp_error(-32603, "Failed to create relationship", json!({"detail": e.to_string()}))
-            })?;
         tx.commit().map_err(|e| {
-            mcp_error(-32603, "Failed to commit relationship", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to commit relationship",
+                json!({"detail": e.to_string()}),
+            )
         })?;
     }
 
@@ -334,7 +459,11 @@ pub fn update_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
         .as_str()
         .ok_or_else(|| mcp_error(-32602, "Missing required param: node_id", json!({})))?;
     let node_id: i64 = node_id_str.parse().map_err(|_| {
-        mcp_error(-32602, "node_id must be a numeric string", json!({"node_id": node_id_str}))
+        mcp_error(
+            -32602,
+            "node_id must be a numeric string",
+            json!({"node_id": node_id_str}),
+        )
     })?;
 
     // Step 1: look up label
@@ -375,23 +504,30 @@ pub fn update_entity(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
     let mut properties_set: Vec<String> = Vec::new();
     {
         let mut tx = db.begin_write().map_err(|e| {
-            mcp_error(-32603, "Failed to begin write", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to begin write",
+                json!({"detail": e.to_string()}),
+            )
         })?;
         for (key, value) in &props {
             if let Some(sv) = property_value_to_store(value) {
-                tx.set_property(target_node_id, key, sv)
-                    .map_err(|e| {
-                        mcp_error(
-                            -32603,
-                            "Failed to set property",
-                            json!({"key": key, "detail": e.to_string()}),
-                        )
-                    })?;
+                tx.set_property(target_node_id, key, sv).map_err(|e| {
+                    mcp_error(
+                        -32603,
+                        "Failed to set property",
+                        json!({"key": key, "detail": e.to_string()}),
+                    )
+                })?;
                 properties_set.push(key.clone());
             }
         }
         tx.commit().map_err(|e| {
-            mcp_error(-32603, "Failed to commit property update", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to commit property update",
+                json!({"detail": e.to_string()}),
+            )
         })?;
     }
 
@@ -420,7 +556,13 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
         .ok_or_else(|| mcp_error(-32602, "Missing required param: class_name", json!({})))?;
     let include_subclasses = args["include_subclasses"].as_bool().unwrap_or(false);
     let limit = args["limit"].as_u64().unwrap_or(20) as usize;
-    let offset = args["offset"].as_u64().unwrap_or(0) as usize;
+
+    // Support both cursor and offset-based pagination. Cursor takes precedence.
+    let offset = if let Some(cursor_str) = args["cursor"].as_str() {
+        cursor_to_offset(cursor_str).unwrap_or(0)
+    } else {
+        args["offset"].as_u64().unwrap_or(0) as usize
+    };
 
     // Step 1: resolve label
     let resolved = resolve(db, label, AliasKind::Class)
@@ -440,9 +582,14 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
     // it ignores unknown property keys silently. Properties are stored and returned
     // with col_<fnv1a32(name)> keys, but WHERE n.col_X = V is also not supported.
     // Filter in Rust post-query by comparing against the col_ keys in the returned map.
-    let filter_obj: Option<HashMap<String, Value>> =
-        args["filters"].as_object().or_else(|| args["where"].as_object())
-            .map(|obj| obj.iter().map(|(k, v)| (prop_name_to_col(k), v.clone())).collect());
+    let filter_obj: Option<HashMap<String, Value>> = args["filters"]
+        .as_object()
+        .or_else(|| args["where"].as_object())
+        .map(|obj| {
+            obj.iter()
+                .map(|(k, v)| (prop_name_to_col(k), v.clone()))
+                .collect()
+        });
 
     let where_str = String::new();
 
@@ -453,21 +600,29 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
     let labels_to_query: Vec<String> = class_names.clone();
 
     for lbl in &labels_to_query {
-        let q = format!(
-            "MATCH (n:{lbl}){where_str} RETURN id(n), labels(n), n SKIP {offset} LIMIT {limit}"
-        );
+        let q = format!("MATCH (n:{lbl}){where_str} RETURN id(n), labels(n), n");
         let result = execute_or_empty(db, &q)?;
         for row in &result.rows {
             let node_id = row
                 .first()
-                .and_then(|v| if let ExecValue::Int64(n) = v { Some(*n) } else { None })
+                .and_then(|v| {
+                    if let ExecValue::Int64(n) = v {
+                        Some(*n)
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or(0);
             // labels(n) returns List([String(label)])
             let row_label = row
                 .get(1)
                 .and_then(|v| match v {
                     ExecValue::List(list) => list.first().and_then(|item| {
-                        if let ExecValue::String(s) = item { Some(s.clone()) } else { None }
+                        if let ExecValue::String(s) = item {
+                            Some(s.clone())
+                        } else {
+                            None
+                        }
                     }),
                     ExecValue::String(s) => Some(s.clone()),
                     _ => None,
@@ -486,9 +641,6 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
             };
             all_rows.push((node_id, row_label, properties));
         }
-        if all_rows.len() >= limit + offset {
-            break;
-        }
     }
 
     // Deduplicate by node_id (in case subclass expansion includes duplicates)
@@ -506,25 +658,53 @@ pub fn find_entities(db: &GraphDb, params: Option<Value>) -> Result<Value, Value
 
     // Apply property filters in Rust (Cypher WHERE doesn't support SparrowDB col_ keys).
     // filter_obj keys are already col_<fnv1a32> translated.
-    let entities: Vec<_> = if let Some(ref filters) = filter_obj {
-        entities.into_iter().filter(|e| {
-            filters.iter().all(|(col_key, expected)| {
-                e["properties"].get(col_key)
-                    .map(|actual| actual == expected)
-                    .unwrap_or(false)
+    let filtered_entities: Vec<_> = if let Some(ref filters) = filter_obj {
+        entities
+            .into_iter()
+            .filter(|e| {
+                filters.iter().all(|(col_key, expected)| {
+                    e["properties"]
+                        .get(col_key)
+                        .map(|actual| actual == expected)
+                        .unwrap_or(false)
+                })
             })
-        }).skip(offset).take(limit).collect()
+            .collect()
     } else {
-        entities.into_iter().skip(offset).take(limit).collect()
+        entities
     };
 
-    // Step 6: return
+    // Compute pagination metadata before slicing
+    let total_count = filtered_entities.len();
+    let pagination = PaginationMetadata::new(total_count, offset, limit);
+
+    // Slice for the requested page
+    let paginated_entities: Vec<_> = filtered_entities
+        .into_iter()
+        .skip(offset)
+        .take(limit)
+        .collect();
+
+    // Step 6: build response with pagination metadata
+    let mut response_data = json!({
+        "entities": paginated_entities,
+        "pagination": {
+            "total_count": pagination.total_count,
+            "offset": pagination.offset,
+            "limit": pagination.limit,
+            "has_more": pagination.has_more,
+        }
+    });
+
+    // Add next_cursor if more results exist
+    if let Some(cursor) = pagination.next_cursor() {
+        response_data["pagination"]["next_cursor"] = json!(cursor);
+    }
+
     Ok(json!({
         "content": [{
             "type": "text",
-            "text": serde_json::to_string(&json!({
-                "entities": entities,
-            })).unwrap_or_default()
+            "text": serde_json::to_string(&response_data).unwrap_or_default()
         }]
     }))
 }
@@ -644,7 +824,13 @@ fn explain_class(db: &GraphDb, name: &str) -> Result<Value, Value> {
                 .rows
                 .first()
                 .and_then(|row| row.first())
-                .and_then(|v| if let ExecValue::Int64(n) = v { Some(*n) } else { None })
+                .and_then(|v| {
+                    if let ExecValue::Int64(n) = v {
+                        Some(*n)
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or(0),
             Err(_) => 0,
         }
@@ -722,7 +908,13 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
             .rows
             .first()
             .and_then(|row| row.first())
-            .and_then(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
+            .and_then(|v| {
+                if let ExecValue::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default()
     };
 
@@ -741,7 +933,13 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
             .rows
             .first()
             .and_then(|row| row.first())
-            .and_then(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
+            .and_then(|v| {
+                if let ExecValue::String(s) = v {
+                    Some(s.clone())
+                } else {
+                    None
+                }
+            })
             .unwrap_or_default()
     };
 
@@ -749,15 +947,25 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
     let valid_source_classes = if domain_class.is_empty() {
         vec![]
     } else {
-        expand_subclasses(db, &domain_class, 20)
-            .map_err(|e| mcp_error(-32603, "Domain subclass expansion failed", so_error_to_mcp(&e)))?
+        expand_subclasses(db, &domain_class, 20).map_err(|e| {
+            mcp_error(
+                -32603,
+                "Domain subclass expansion failed",
+                so_error_to_mcp(&e),
+            )
+        })?
     };
 
     let valid_target_classes = if range_class.is_empty() {
         vec![]
     } else {
-        expand_subclasses(db, &range_class, 20)
-            .map_err(|e| mcp_error(-32603, "Range subclass expansion failed", so_error_to_mcp(&e)))?
+        expand_subclasses(db, &range_class, 20).map_err(|e| {
+            mcp_error(
+                -32603,
+                "Range subclass expansion failed",
+                so_error_to_mcp(&e),
+            )
+        })?
     };
 
     // Instance count: try MATCH ()-[r:REL_NAME]->() RETURN count(r)
@@ -768,7 +976,13 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
                 .rows
                 .first()
                 .and_then(|row| row.first())
-                .and_then(|v| if let ExecValue::Int64(n) = v { Some(*n) } else { None })
+                .and_then(|v| {
+                    if let ExecValue::Int64(n) = v {
+                        Some(*n)
+                    } else {
+                        None
+                    }
+                })
                 .unwrap_or(0),
             Err(_) => 0,
         }
@@ -801,9 +1015,8 @@ fn explain_relation(db: &GraphDb, name: &str) -> Result<Value, Value> {
 // ── validate ──────────────────────────────────────────────────────────────────
 
 pub fn validate(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
-    let report = sparrowdb_ontology_core::validate(db).map_err(|e| {
-        mcp_error(-32603, "Validation error", json!({"detail": e.to_string()}))
-    })?;
+    let report = sparrowdb_ontology_core::validate(db)
+        .map_err(|e| mcp_error(-32603, "Validation error", json!({"detail": e.to_string()})))?;
 
     let violations_found = report.violations.len() as u64;
     let warnings_found = report.warnings.len() as u64;
@@ -844,8 +1057,6 @@ fn query_string_list_params(
     Ok(out)
 }
 
-
-
 /// Convert an ExecValue to a JSON Value for property serialization.
 fn exec_value_to_json(v: &ExecValue) -> Value {
     match v {
@@ -861,9 +1072,7 @@ fn exec_value_to_json(v: &ExecValue) -> Value {
             }
             Value::Object(obj)
         }
-        ExecValue::List(l) => {
-            Value::Array(l.iter().map(exec_value_to_json).collect())
-        }
+        ExecValue::List(l) => Value::Array(l.iter().map(exec_value_to_json).collect()),
         _ => json!(null),
     }
 }
