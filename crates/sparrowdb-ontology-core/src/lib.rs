@@ -7,6 +7,7 @@ pub mod model;
 pub mod namespace;
 pub mod resolution;
 pub mod snapshot;
+pub mod turtle_import;
 pub mod validation;
 
 // ── Convenient re-exports ────────────────────────────────────────────────────
@@ -25,6 +26,7 @@ pub use model::{
 pub use resolution::{resolve, ResolvedSymbol};
 pub use jsonld::export_json_ld;
 pub use snapshot::{export_schema, import_schema, ImportSchemaResult, SchemaSnapshot, SNAPSHOT_VERSION};
+pub use turtle_import::{import_turtle, DomainRangeStrategy, ImportOptions, ImportSummary};
 pub use validation::{
     validate, ValidationContext, ValidationReport, ValidationViolation, ValidationWarning,
     ViolationKind,
