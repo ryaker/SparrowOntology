@@ -186,7 +186,7 @@ Warnings (3):
 
 **Import OWL ontologies:**
 
-Standard OWL constructs (`owl:Class`, `owl:ObjectProperty`, `rdfs:subClassOf`, `rdfs:label`, `rdfs:comment`, `skos:altLabel`) map cleanly. Constructs outside Sparrow Ontology's flat schema (cardinality restrictions, `owl:intersectionOf`, blank-node subjects) are skipped with a warning — no crash, no partial write failures.
+Standard OWL constructs (`owl:Class`, `owl:ObjectProperty`, `rdfs:subClassOf`, `rdfs:label`, `rdfs:comment`, `skos:altLabel`) map cleanly. Validated against FOAF (minimal happy-path), schema.org (~900 classes, ~1,400 properties, soft `domainIncludes` constraints), and the W3C OWL Families Primer. Unsupported OWL constructs (cardinality restrictions, `equivalentClass` cycles) emit warnings and are skipped — no crash, no silent data loss.
 
 **Assign IRIs to your own classes:**
 
