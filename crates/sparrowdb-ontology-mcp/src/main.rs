@@ -361,7 +361,8 @@ fn tool_list() -> Value {
                     "type": "object",
                     "properties": {
                         "name": {"type": "string", "description": "Canonical class name"},
-                        "description": {"type": "string", "description": "Optional human-readable description"}
+                        "description": {"type": "string", "description": "Optional human-readable description"},
+                        "iri": {"type": "string", "description": "Optional IRI (e.g. https://schema.org/Person) for JSON-LD export and linked-data integration"}
                     },
                     "required": ["name"]
                 }
@@ -376,7 +377,8 @@ fn tool_list() -> Value {
                         "domain": {"type": "string", "description": "Source class name or alias"},
                         "range": {"type": "string", "description": "Target class name or alias"},
                         "description": {"type": "string", "description": "Optional description"},
-                        "directed": {"type": "boolean", "description": "Whether the relation is directed (default: true)"}
+                        "directed": {"type": "boolean", "description": "Whether the relation is directed (default: true)"},
+                        "iri": {"type": "string", "description": "Optional IRI for JSON-LD export and linked-data integration"}
                     },
                     "required": ["name", "domain", "range"]
                 }

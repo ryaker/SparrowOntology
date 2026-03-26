@@ -59,3 +59,7 @@ path = "../../tests/integration/test_import.rs"
 [[test]]
 name = "test_schema_snapshot"
 path = "../../tests/integration/test_schema_snapshot.rs"
+
+[[test]]
+name = "test_iri_field"
+path = "../../tests/integration/test_iri_field.rs"

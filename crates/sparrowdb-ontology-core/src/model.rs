@@ -59,6 +59,9 @@ pub struct OntologyClass {
     pub status: SymbolStatus,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Optional IRI for JSON-LD export and linked-data integration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iri: Option<String>,
 }
 
 impl OntologyClass {
@@ -72,6 +75,7 @@ impl OntologyClass {
             status: SymbolStatus::Active,
             created_at: now_utc_ms(),
             updated_at: now_utc_ms(),
+            iri: None,
         }
     }
 }
@@ -92,6 +96,9 @@ pub struct OntologyRelation {
     pub directed: bool,
     pub created_at: i64,
     pub updated_at: i64,
+    /// Optional IRI for JSON-LD export and linked-data integration.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub iri: Option<String>,
 }
 
 impl OntologyRelation {
@@ -106,6 +113,7 @@ impl OntologyRelation {
             directed: true,
             created_at: now_utc_ms(),
             updated_at: now_utc_ms(),
+            iri: None,
         }
     }
 }

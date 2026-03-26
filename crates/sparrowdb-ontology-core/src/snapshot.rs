@@ -190,7 +190,7 @@ pub fn export_schema(db: &GraphDb) -> Result<SchemaSnapshot, SoError> {
 fn export_classes(db: &GraphDb) -> Result<Vec<OntologyClass>, SoError> {
     let q = format!(
         "MATCH (n:{CLASS_LABEL}) \
-         RETURN n.symbol_id, n.name, n.description, n.status, n.created_at, n.updated_at"
+         RETURN n.symbol_id, n.name, n.description, n.status, n.created_at, n.updated_at, n.iri"
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
@@ -213,6 +213,7 @@ fn export_classes(db: &GraphDb) -> Result<Vec<OntologyClass>, SoError> {
             status: status_from_str(&str_val(&row[3])),
             created_at: i64_val(&row[4]),
             updated_at: i64_val(&row[5]),
+            iri: row.get(6).and_then(opt_str_val),
         });
     }
     Ok(out)
@@ -221,7 +222,7 @@ fn export_classes(db: &GraphDb) -> Result<Vec<OntologyClass>, SoError> {
 fn export_relations(db: &GraphDb) -> Result<Vec<OntologyRelation>, SoError> {
     let q = format!(
         "MATCH (r:{RELATION_LABEL}) \
-         RETURN r.symbol_id, r.name, r.description, r.status, r.directed, r.created_at, r.updated_at"
+         RETURN r.symbol_id, r.name, r.description, r.status, r.directed, r.created_at, r.updated_at, r.iri"
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
@@ -242,6 +243,7 @@ fn export_relations(db: &GraphDb) -> Result<Vec<OntologyRelation>, SoError> {
         directed: bool,
         created_at: i64,
         updated_at: i64,
+        iri: Option<String>,
     }
     let mut bases: Vec<RelBase> = Vec::new();
     for row in &result.rows {
@@ -256,6 +258,7 @@ fn export_relations(db: &GraphDb) -> Result<Vec<OntologyRelation>, SoError> {
             directed: bool_val(&row[4]),
             created_at: i64_val(&row[5]),
             updated_at: i64_val(&row[6]),
+            iri: row.get(7).and_then(opt_str_val),
         });
     }
 
@@ -274,6 +277,7 @@ fn export_relations(db: &GraphDb) -> Result<Vec<OntologyRelation>, SoError> {
             directed: b.directed,
             created_at: b.created_at,
             updated_at: b.updated_at,
+            iri: b.iri,
         })
         .collect();
     Ok(out)
@@ -571,6 +575,7 @@ pub fn import_schema(
 
 fn import_class_node(db: &GraphDb, c: &OntologyClass) -> Result<NodeId, SoError> {
     let desc = c.description.as_deref().unwrap_or("");
+    let iri = c.iri.as_deref().unwrap_or("");
     let mut tx = db.begin_write()?;
     let nid = tx.merge_node(
         CLASS_LABEL,
@@ -579,6 +584,7 @@ fn import_class_node(db: &GraphDb, c: &OntologyClass) -> Result<NodeId, SoError>
             ("name", sv(&c.name)),
             ("description", sv(desc)),
             ("status", sv(status_to_str(&c.status))),
+            ("iri", sv(iri)),
             ("created_at", iv(c.created_at)),
             ("updated_at", iv(c.updated_at)),
         ]),
@@ -589,6 +595,7 @@ fn import_class_node(db: &GraphDb, c: &OntologyClass) -> Result<NodeId, SoError>
 
 fn import_relation_node(db: &GraphDb, r: &OntologyRelation) -> Result<NodeId, SoError> {
     let desc = r.description.as_deref().unwrap_or("");
+    let iri = r.iri.as_deref().unwrap_or("");
     let mut tx = db.begin_write()?;
     let nid = tx.merge_node(
         RELATION_LABEL,
@@ -598,6 +605,7 @@ fn import_relation_node(db: &GraphDb, r: &OntologyRelation) -> Result<NodeId, So
             ("description", sv(desc)),
             ("status", sv(status_to_str(&r.status))),
             ("directed", bv(r.directed)),
+            ("iri", sv(iri)),
             ("created_at", iv(r.created_at)),
             ("updated_at", iv(r.updated_at)),
         ]),

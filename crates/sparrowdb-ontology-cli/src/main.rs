@@ -48,6 +48,9 @@ enum Commands {
         db: PathBuf,
         #[arg(long)]
         desc: Option<String>,
+        /// Optional IRI (e.g. https://schema.org/Person) for JSON-LD export
+        #[arg(long)]
+        iri: Option<String>,
     },
     /// Define a new relation between classes
     DefineRelation {
@@ -60,6 +63,9 @@ enum Commands {
         to: String,
         #[arg(long)]
         desc: Option<String>,
+        /// Optional IRI for JSON-LD export and linked-data integration
+        #[arg(long)]
+        iri: Option<String>,
     },
     /// Add a property to a class or relation
     AddProperty {
@@ -185,9 +191,9 @@ fn run(cli: Cli) -> Result<(), String> {
     match cli.command {
         Commands::Init { db, blank, force } => cmd_init(&db, blank, force),
         Commands::Show { db, full, json } => cmd_show(&db, full, json),
-        Commands::DefineClass { name, db, desc } => cmd_define_class(&db, &name, desc.as_deref()),
-        Commands::DefineRelation { name, db, from, to, desc } => {
-            cmd_define_relation(&db, &name, &from, &to, desc.as_deref())
+        Commands::DefineClass { name, db, desc, iri } => cmd_define_class(&db, &name, desc.as_deref(), iri.as_deref()),
+        Commands::DefineRelation { name, db, from, to, desc, iri } => {
+            cmd_define_relation(&db, &name, &from, &to, desc.as_deref(), iri.as_deref())
         }
         Commands::AddProperty { owner_prop, db, prop_type, required, default } => {
             cmd_add_property(&db, &owner_prop, &prop_type, required, default.as_deref())
@@ -306,11 +312,14 @@ fn cmd_show(db_path: &PathBuf, full: bool, as_json: bool) -> Result<(), String> 
     Ok(())
 }
 
-fn cmd_define_class(db_path: &PathBuf, name: &str, desc: Option<&str>) -> Result<(), String> {
+fn cmd_define_class(db_path: &PathBuf, name: &str, desc: Option<&str>, iri: Option<&str>) -> Result<(), String> {
     let db = open_db(db_path)?;
     let mut params = json!({"name": name});
     if let Some(d) = desc {
         params["description"] = json!(d);
+    }
+    if let Some(i) = iri {
+        params["iri"] = json!(i);
     }
     let result = handle_tool_call(&db, "define_class", Some(params))
         .map_err(|e| render_error(&e))?;
@@ -326,11 +335,15 @@ fn cmd_define_relation(
     from: &str,
     to: &str,
     desc: Option<&str>,
+    iri: Option<&str>,
 ) -> Result<(), String> {
     let db = open_db(db_path)?;
     let mut params = json!({"name": name, "domain": from, "range": to});
     if let Some(d) = desc {
         params["description"] = json!(d);
+    }
+    if let Some(i) = iri {
+        params["iri"] = json!(i);
     }
     let result = handle_tool_call(&db, "define_relation", Some(params))
         .map_err(|e| render_error(&e))?;

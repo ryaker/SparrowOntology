@@ -234,6 +234,7 @@ fn props(pairs: &[(&str, StoreValue)]) -> HashMap<String, StoreValue> {
 /// Matches on ALL provided properties; unique per symbol_id.
 fn seed_class(db: &GraphDb, c: &OntologyClass) -> Result<NodeId, SoError> {
     let desc = c.description.as_deref().unwrap_or("");
+    let iri = c.iri.as_deref().unwrap_or("");
     let mut tx = db.begin_write()?;
     let node_id = tx.merge_node(
         CLASS_LABEL,
@@ -242,6 +243,7 @@ fn seed_class(db: &GraphDb, c: &OntologyClass) -> Result<NodeId, SoError> {
             ("name", sv(&c.name)),
             ("description", sv(desc)),
             ("status", sv("active")),
+            ("iri", sv(iri)),
             ("created_at", iv(c.created_at)),
             ("updated_at", iv(c.updated_at)),
         ]),
@@ -253,6 +255,7 @@ fn seed_class(db: &GraphDb, c: &OntologyClass) -> Result<NodeId, SoError> {
 /// Seed one relation node (without edges). Returns the NodeId.
 fn seed_relation_node(db: &GraphDb, r: &OntologyRelation) -> Result<NodeId, SoError> {
     let desc = r.description.as_deref().unwrap_or("");
+    let iri = r.iri.as_deref().unwrap_or("");
     let mut tx = db.begin_write()?;
     let node_id = tx.merge_node(
         RELATION_LABEL,
@@ -262,6 +265,7 @@ fn seed_relation_node(db: &GraphDb, r: &OntologyRelation) -> Result<NodeId, SoEr
             ("description", sv(desc)),
             ("status", sv("active")),
             ("directed", bv(r.directed)),
+            ("iri", sv(iri)),
             ("created_at", iv(r.created_at)),
             ("updated_at", iv(r.updated_at)),
         ]),

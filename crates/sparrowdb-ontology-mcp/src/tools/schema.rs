@@ -299,7 +299,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
     // Query all classes
     let classes = {
         let q = format!(
-            "MATCH (c:{CLASS_LABEL}) RETURN c.symbol_id, c.name, c.description, c.status, c.created_at, c.updated_at"
+            "MATCH (c:{CLASS_LABEL}) RETURN c.symbol_id, c.name, c.description, c.status, c.created_at, c.updated_at, c.iri"
         );
         let result = execute_or_empty(db, &q)?;
         let mut out = Vec::new();
@@ -310,6 +310,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
             let status = str_val(&row, 3);
             let created_at = int_val(&row, 4);
             let updated_at = int_val(&row, 5);
+            let iri = str_val_opt(&row, 6);
 
             // Aliases for this class
             let aliases = get_aliases_for(db, &name, "class")?;
@@ -323,6 +324,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
                 "name": name,
                 "description": description,
                 "status": status,
+                "iri": iri,
                 "created_at": created_at,
                 "updated_at": updated_at,
                 "aliases": aliases,
@@ -336,7 +338,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
     // Query all relations
     let relations = {
         let q = format!(
-            "MATCH (r:{RELATION_LABEL}) RETURN r.symbol_id, r.name, r.description, r.status, r.directed, r.created_at, r.updated_at"
+            "MATCH (r:{RELATION_LABEL}) RETURN r.symbol_id, r.name, r.description, r.status, r.directed, r.created_at, r.updated_at, r.iri"
         );
         let result = execute_or_empty(db, &q)?;
         let mut out = Vec::new();
@@ -348,6 +350,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
             let directed = int_val(&row, 4) != 0;
             let created_at = int_val(&row, 5);
             let updated_at = int_val(&row, 6);
+            let iri = str_val_opt(&row, 7);
 
             let domain = get_domain_for_relation(db, &name)?;
             let range = get_range_for_relation(db, &name)?;
@@ -359,6 +362,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
                 "description": description,
                 "status": status,
                 "directed": directed,
+                "iri": iri,
                 "domain": domain,
                 "range": range,
                 "created_at": created_at,
@@ -431,6 +435,7 @@ pub fn define_class(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         .as_str()
         .ok_or_else(|| mcp_error(-32602, "Missing required param: name", json!({})))?;
     let description = args["description"].as_str().unwrap_or("");
+    let iri = args["iri"].as_str().unwrap_or("");
 
     // Validate: name must not start with __SO_
     if name.starts_with("__SO_") {
@@ -455,6 +460,7 @@ pub fn define_class(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
             ("name", sv(name)),
             ("description", sv(description)),
             ("status", sv("active")),
+            ("iri", sv(iri)),
             ("created_at", iv(now)),
             ("updated_at", iv(now)),
         ]),
@@ -465,11 +471,13 @@ pub fn define_class(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         mcp_error(-32603, "Failed to commit", json!({"detail": e.to_string()}))
     })?;
 
+    let iri_opt: Option<&str> = if iri.is_empty() { None } else { Some(iri) };
     let created = json!({
         "symbol_id": symbol_id,
         "name": name,
         "description": description,
         "status": "active",
+        "iri": iri_opt,
         "created_at": now,
         "updated_at": now,
     });
@@ -497,6 +505,7 @@ pub fn define_relation(db: &GraphDb, params: Option<Value>) -> Result<Value, Val
         .ok_or_else(|| mcp_error(-32602, "Missing required param: range", json!({})))?;
     let description = args["description"].as_str().unwrap_or("");
     let directed = args["directed"].as_bool().unwrap_or(true);
+    let iri = args["iri"].as_str().unwrap_or("");
 
     // Validate name
     if name.starts_with("__SO_") {
@@ -530,6 +539,7 @@ pub fn define_relation(db: &GraphDb, params: Option<Value>) -> Result<Value, Val
                 ("description", sv(description)),
                 ("status", sv("active")),
                 ("directed", bv(directed)),
+                ("iri", sv(iri)),
                 ("created_at", iv(now)),
                 ("updated_at", iv(now)),
             ]),
@@ -562,12 +572,14 @@ pub fn define_relation(db: &GraphDb, params: Option<Value>) -> Result<Value, Val
         mcp_error(-32603, "Failed to commit edges", json!({"detail": e.to_string()}))
     })?;
 
+    let iri_opt: Option<&str> = if iri.is_empty() { None } else { Some(iri) };
     let created = json!({
         "symbol_id": symbol_id,
         "name": name,
         "description": description,
         "status": "active",
         "directed": directed,
+        "iri": iri_opt,
         "domain": domain_sym.canonical_name,
         "range": range_sym.canonical_name,
         "created_at": now,
