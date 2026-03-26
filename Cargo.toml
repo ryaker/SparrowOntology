@@ -2,13 +2,4 @@
 members = ["crates/sparrowdb-ontology-core", "crates/sparrowdb-ontology-mcp", "crates/sparrowdb-ontology-cli"]
 resolver = "2"
 
-# Use local SparrowDB source while fixes (delete_edge, Catalog Clone, edge props,
-# export/import, perf) are merged but not yet published to crates.io.
-# Remove this section and bump dep versions to 0.1.6 once SparrowDB publishes 0.1.6.
-[patch.crates-io]
-sparrowdb         = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb" }
-sparrowdb-common  = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-common" }
-sparrowdb-execution = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-execution" }
-sparrowdb-storage = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-storage" }
-sparrowdb-catalog = { path = "/Users/ryaker/Dev/SparrowDB/crates/sparrowdb-catalog" }
 
