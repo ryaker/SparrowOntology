@@ -1,5 +1,5 @@
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{init, model::*, SoError, StarterKind};
+use sparrowdb_ontology_core::{init, model::*, SoError};
 
 fn open_db() -> (tempfile::TempDir, GraphDb) {
     let dir = tempfile::tempdir().unwrap();

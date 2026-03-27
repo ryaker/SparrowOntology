@@ -279,7 +279,7 @@ fn run(cli: Cli) -> Result<(), String> {
 
 // ── Database opener ───────────────────────────────────────────────────────────
 
-fn open_db(path: &PathBuf) -> Result<GraphDb, String> {
+fn open_db(path: &Path) -> Result<GraphDb, String> {
     GraphDb::open(path)
         .map_err(|e| format!("Error: failed to open database at {}: {e}", path.display()))
 }

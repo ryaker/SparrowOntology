@@ -7,16 +7,6 @@ use sparrowdb_ontology_core::{
     validation::ValidationContext,
     SoError,
 };
-use sparrowdb_storage::node_store::Value as StoreValue;
-
-fn sv(s: &str) -> StoreValue {
-    StoreValue::Bytes(s.as_bytes().to_vec())
-}
-
-fn iv(n: i64) -> StoreValue {
-    StoreValue::Int64(n)
-}
-
 fn initialized_db() -> (tempfile::TempDir, GraphDb) {
     let dir = tempfile::tempdir().unwrap();
     let db = GraphDb::open(dir.path()).unwrap();

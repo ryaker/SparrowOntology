@@ -322,11 +322,11 @@ pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         for row in &result.rows {
             let symbol_id = str_val(row, 0);
             let name = str_val(row, 1);
-            let description = str_val_opt(&row, 2);
+            let description = str_val_opt(row, 2);
             let status = str_val(row, 3);
             let created_at = int_val(row, 4);
             let updated_at = int_val(row, 5);
-            let iri = str_val_opt(&row, 6);
+            let iri = str_val_opt(row, 6);
 
             // Aliases for this class
             let aliases = get_aliases_for(db, &name, "class")?;
@@ -375,12 +375,12 @@ pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         for row in &result.rows {
             let symbol_id = str_val(row, 0);
             let name = str_val(row, 1);
-            let description = str_val_opt(&row, 2);
+            let description = str_val_opt(row, 2);
             let status = str_val(row, 3);
             let directed = int_val(row, 4) != 0;
             let created_at = int_val(row, 5);
             let updated_at = int_val(row, 6);
-            let iri = str_val_opt(&row, 7);
+            let iri = str_val_opt(row, 7);
 
             let domain = get_domain_for_relation(db, &name)?;
             let range = get_range_for_relation(db, &name)?;

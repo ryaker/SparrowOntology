@@ -61,8 +61,8 @@ fn base64_encode(s: &str) -> Result<String, Value> {
 
 /// Decode a base64 cursor back to offset number.
 fn cursor_to_offset(cursor: &str) -> Option<usize> {
-    if cursor.starts_with("offset:") {
-        cursor[7..].parse().ok()
+    if let Some(offset_str) = cursor.strip_prefix("offset:") {
+        offset_str.parse().ok()
     } else {
         // Try hex decoding for backwards compat with encoded cursors
         let mut result = String::new();
@@ -78,8 +78,8 @@ fn cursor_to_offset(cursor: &str) -> Option<usize> {
                 return None;
             }
         }
-        if result.starts_with("offset:") {
-            result[7..].parse().ok()
+        if let Some(offset_str) = result.strip_prefix("offset:") {
+            offset_str.parse().ok()
         } else {
             None
         }

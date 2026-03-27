@@ -114,7 +114,7 @@ fn get_context(doc: &serde_json::Value) -> &serde_json::Map<String, serde_json::
 
 /// Find a node in @graph by rdfs:label value.
 fn find_node_by_label<'a>(
-    graph: &'a Vec<serde_json::Value>,
+    graph: &'a [serde_json::Value],
     label: &str,
 ) -> Option<&'a serde_json::Value> {
     graph

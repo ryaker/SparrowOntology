@@ -29,7 +29,7 @@ fn get_graph(doc: &serde_json::Value) -> &Vec<serde_json::Value> {
 }
 
 fn find_node_by_label<'a>(
-    graph: &'a Vec<serde_json::Value>,
+    graph: &'a [serde_json::Value],
     label: &str,
 ) -> Option<&'a serde_json::Value> {
     graph

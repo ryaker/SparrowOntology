@@ -17,12 +17,6 @@ fn initialized_db() -> (tempfile::TempDir, GraphDb) {
     (dir, db)
 }
 
-fn empty_db() -> (tempfile::TempDir, GraphDb) {
-    let dir = tempfile::tempdir().unwrap();
-    let db = GraphDb::open(dir.path()).unwrap();
-    (dir, db)
-}
-
 /// Call a tool and expect Ok, returning the inner parsed JSON (from content[0].text).
 fn call(db: &GraphDb, tool: &str, params: Value) -> Value {
     let result = handle_tool_call(db, tool, Some(params)).unwrap();
