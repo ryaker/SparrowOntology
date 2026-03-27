@@ -467,7 +467,7 @@ impl<'a> ValidationContext<'a> {
                     None
                 }
             })
-            .ok_or_else(|| SoError::Storage(sparrowdb_common::Error::NotFound))
+            .ok_or(SoError::Storage(sparrowdb_common::Error::NotFound))
     }
 
     /// Return the canonical range class name for a relation.
@@ -489,7 +489,7 @@ impl<'a> ValidationContext<'a> {
                     None
                 }
             })
-            .ok_or_else(|| SoError::Storage(sparrowdb_common::Error::NotFound))
+            .ok_or(SoError::Storage(sparrowdb_common::Error::NotFound))
     }
 
     /// Check that `value` matches the declared `prop.datatype` and, if

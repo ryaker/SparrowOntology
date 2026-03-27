@@ -383,7 +383,7 @@ pub fn import_turtle(
 
 /// Extract the local name from an IRI (everything after the last `#` or `/`).
 fn local_name(iri: &str) -> String {
-    iri.rfind(|c| c == '#' || c == '/')
+    iri.rfind(['#', '/'])
         .map(|pos| iri[pos + 1..].to_owned())
         .unwrap_or_else(|| iri.to_owned())
 }

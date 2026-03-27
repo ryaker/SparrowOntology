@@ -610,5 +610,5 @@ fn get_node_id_by_symbol_id(db: &GraphDb, label: &str, symbol_id: &str) -> Resul
                 None
             }
         })
-        .ok_or_else(|| SoError::Storage(sparrowdb_common::Error::NotFound))
+        .ok_or(SoError::Storage(sparrowdb_common::Error::NotFound))
 }

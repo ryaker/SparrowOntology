@@ -161,10 +161,8 @@ pub fn list_canonical_names(db: &GraphDb, kind: AliasKind) -> Result<Vec<String>
     };
     let mut names = Vec::new();
     for row in &result.rows {
-        if let Some(v) = row.first() {
-            if let Value::String(s) = v {
-                names.push(s.clone());
-            }
+        if let Some(Value::String(s)) = row.first() {
+            names.push(s.clone());
         }
     }
     Ok(names)
@@ -201,11 +199,11 @@ fn edit_distance(a: &str, b: &str) -> usize {
     let m = a.len();
     let n = b.len();
     let mut dp = vec![vec![0usize; n + 1]; m + 1];
-    for i in 0..=m {
-        dp[i][0] = i;
+    for (i, row) in dp.iter_mut().enumerate().take(m + 1) {
+        row[0] = i;
     }
-    for j in 0..=n {
-        dp[0][j] = j;
+    for (j, val) in dp[0].iter_mut().enumerate().take(n + 1) {
+        *val = j;
     }
     for i in 1..=m {
         for j in 1..=n {
