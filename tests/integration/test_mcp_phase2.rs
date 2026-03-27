@@ -169,9 +169,8 @@ fn ac06_add_alias_then_resolve_name() {
         "add_alias",
         json!({"alias_name": "EMPLOYED_BY", "target": "WORKS_FOR", "kind": "relation"}),
     );
-    assert_eq!(
+    assert!(
         alias_result["success"].as_bool().unwrap_or(false),
-        true,
         "add_alias should succeed, got: {alias_result}"
     );
 
@@ -186,9 +185,8 @@ fn ac06_add_alias_then_resolve_name() {
         "WORKS_FOR",
         "canonical_name should be 'WORKS_FOR', got: {resolve_result}"
     );
-    assert_eq!(
+    assert!(
         resolve_result["was_alias"].as_bool().unwrap_or(false),
-        true,
         "was_alias should be true"
     );
 }
@@ -203,9 +201,8 @@ fn ac07_create_entity_person() {
         "create_entity",
         json!({"class_name": "Person", "properties": {"name": "Alice"}}),
     );
-    assert_eq!(
+    assert!(
         result["created"].as_bool().unwrap_or(false),
-        true,
         "created should be true, got: {result}"
     );
     assert!(
@@ -230,9 +227,8 @@ fn ac08_create_entity_via_alias() {
         "create_entity",
         json!({"class_name": "Human", "properties": {"name": "Bob"}}),
     );
-    assert_eq!(
+    assert!(
         result["created"].as_bool().unwrap_or(false),
-        true,
         "created should be true for alias 'Human', got: {result}"
     );
     assert_eq!(
@@ -262,9 +258,8 @@ fn ac09_create_entity_preserve_source_terms() {
             "preserve_source_terms": true
         }),
     );
-    assert_eq!(
+    assert!(
         result["created"].as_bool().unwrap_or(false),
-        true,
         "created should be true, got: {result}"
     );
     // source_label should be "Human" (the alias used)
@@ -327,9 +322,8 @@ fn ac11_create_relationship_valid() {
         "create_relationship",
         json!({"from_id": alice_id, "relation_name": "WORKS_FOR", "to_id": acme_id}),
     );
-    assert_eq!(
+    assert!(
         result["created"].as_bool().unwrap_or(false),
-        true,
         "created should be true, got: {result}"
     );
 }
@@ -370,9 +364,8 @@ fn ac12_create_relationship_via_alias() {
         "create_relationship",
         json!({"from_id": alice_id, "relation_name": "EMPLOYED_BY", "to_id": acme_id}),
     );
-    assert_eq!(
+    assert!(
         result["created"].as_bool().unwrap_or(false),
-        true,
         "created should be true via alias 'EMPLOYED_BY', got: {result}"
     );
 }
@@ -440,9 +433,8 @@ fn ac14_update_entity_validates() {
         "update_entity",
         json!({"node_id": node_id, "properties": {"name": "Alicia"}}),
     );
-    assert_eq!(
+    assert!(
         update_result["updated"].as_bool().unwrap_or(false),
-        true,
         "updated should be true for valid property, got: {update_result}"
     );
 
@@ -700,9 +692,8 @@ fn ac20_explain_symbol_relation() {
 fn ac21_validate_clean_graph() {
     let (_dir, db) = initialized_db();
     let result = call(&db, "validate", json!({"scope": "full_graph"}));
-    assert_eq!(
+    assert!(
         result["valid"].as_bool().unwrap_or(false),
-        true,
         "valid should be true for clean initialized graph, got: {result}"
     );
     let violations = result["violations"]
@@ -736,9 +727,8 @@ fn ac22_validate_reports_violations() {
     }
 
     let result = call(&db, "validate", json!({"scope": "full_graph"}));
-    assert_eq!(
-        result["valid"].as_bool().unwrap_or(true),
-        false,
+    assert!(
+        !result["valid"].as_bool().unwrap_or(true),
         "valid should be false when unknown-label nodes exist, got: {result}"
     );
     let violations = result["violations"]
@@ -787,9 +777,8 @@ fn ac23_validate_no_false_positives_with_relationships() {
 
     // Validate — must not produce false-positive violations for "WORKS_FOR" label
     let result = call(&db, "validate", json!({"scope": "full_graph"}));
-    assert_eq!(
+    assert!(
         result["valid"].as_bool().unwrap_or(false),
-        true,
         "validate should be clean after creating typed entities + relationship, got: {result}"
     );
     let violations = result["violations"].as_array().expect("violations array");
