@@ -320,12 +320,12 @@ pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         let result = execute_or_empty(db, &q)?;
         let mut all_classes = Vec::new();
         for row in &result.rows {
-            let symbol_id = str_val(&row, 0);
-            let name = str_val(&row, 1);
+            let symbol_id = str_val(row, 0);
+            let name = str_val(row, 1);
             let description = str_val_opt(&row, 2);
-            let status = str_val(&row, 3);
-            let created_at = int_val(&row, 4);
-            let updated_at = int_val(&row, 5);
+            let status = str_val(row, 3);
+            let created_at = int_val(row, 4);
+            let updated_at = int_val(row, 5);
             let iri = str_val_opt(&row, 6);
 
             // Aliases for this class
@@ -373,13 +373,13 @@ pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         let result = execute_or_empty(db, &q)?;
         let mut all_relations = Vec::new();
         for row in &result.rows {
-            let symbol_id = str_val(&row, 0);
-            let name = str_val(&row, 1);
+            let symbol_id = str_val(row, 0);
+            let name = str_val(row, 1);
             let description = str_val_opt(&row, 2);
-            let status = str_val(&row, 3);
-            let directed = int_val(&row, 4) != 0;
-            let created_at = int_val(&row, 5);
-            let updated_at = int_val(&row, 6);
+            let status = str_val(row, 3);
+            let directed = int_val(row, 4) != 0;
+            let created_at = int_val(row, 5);
+            let updated_at = int_val(row, 6);
             let iri = str_val_opt(&row, 7);
 
             let domain = get_domain_for_relation(db, &name)?;
@@ -425,10 +425,10 @@ pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         let mut all_aliases = Vec::new();
         for row in &result.rows {
             all_aliases.push(json!({
-                "name": str_val(&row, 0),
-                "kind": str_val(&row, 1),
-                "target_name": str_val(&row, 2),
-                "created_at": int_val(&row, 3),
+                "name": str_val(row, 0),
+                "kind": str_val(row, 1),
+                "target_name": str_val(row, 2),
+                "created_at": int_val(row, 3),
             }));
         }
 
@@ -457,13 +457,13 @@ pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
         let mut all_properties = Vec::new();
         for row in &result.rows {
             all_properties.push(json!({
-                "symbol_id": str_val(&row, 0),
-                "name": str_val(&row, 1),
-                "datatype": str_val(&row, 2),
-                "required": int_val(&row, 3) != 0,
-                "owner_symbol_id": str_val(&row, 4),
-                "owner_kind": str_val(&row, 5),
-                "created_at": int_val(&row, 6),
+                "symbol_id": str_val(row, 0),
+                "name": str_val(row, 1),
+                "datatype": str_val(row, 2),
+                "required": int_val(row, 3) != 0,
+                "owner_symbol_id": str_val(row, 4),
+                "owner_kind": str_val(row, 5),
+                "created_at": int_val(row, 6),
             }));
         }
 
@@ -1132,9 +1132,9 @@ fn get_properties_for_class(db: &GraphDb, class_symbol_id: &str) -> Result<Vec<V
     let mut props = Vec::new();
     for row in &result.rows {
         props.push(json!({
-            "name": str_val(&row, 0),
-            "datatype": str_val(&row, 1),
-            "required": int_val(&row, 2) != 0,
+            "name": str_val(row, 0),
+            "datatype": str_val(row, 1),
+            "required": int_val(row, 2) != 0,
         }));
     }
     Ok(props)
