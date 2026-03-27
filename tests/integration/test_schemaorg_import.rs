@@ -310,7 +310,9 @@ fn subclass_hierarchy_in_export() {
 
     // Person → subClassOf Thing (verify link exists and references Thing)
     let person = find_node_by_label(graph, "Person").expect("Person not found");
-    let person_subclass = person.get("rdfs:subClassOf").expect("Person must have rdfs:subClassOf in export");
+    let person_subclass = person
+        .get("rdfs:subClassOf")
+        .expect("Person must have rdfs:subClassOf in export");
     let person_subclass_str = serde_json::to_string(person_subclass).unwrap();
     assert!(
         person_subclass_str.contains("Thing"),
@@ -320,7 +322,9 @@ fn subclass_hierarchy_in_export() {
 
     // LocalBusiness → subClassOf Organization
     let lb = find_node_by_label(graph, "LocalBusiness").expect("LocalBusiness not found");
-    let lb_subclass = lb.get("rdfs:subClassOf").expect("LocalBusiness must have rdfs:subClassOf in export");
+    let lb_subclass = lb
+        .get("rdfs:subClassOf")
+        .expect("LocalBusiness must have rdfs:subClassOf in export");
     let lb_subclass_str = serde_json::to_string(lb_subclass).unwrap();
     assert!(
         lb_subclass_str.contains("Organization"),
@@ -445,8 +449,7 @@ fn idempotent_reimport_schema_org() {
     // Verify the import summary is consistent (should report same items as first)
     // Note: This validates idempotency — re-importing same data should recognize and reuse existing nodes
     assert_eq!(
-        s1.classes_imported,
-        s2.classes_imported,
+        s1.classes_imported, s2.classes_imported,
         "re-importing same data should detect and reuse existing classes"
     );
 }
