@@ -67,7 +67,8 @@ fn seed_relation(db: &GraphDb, r: &OntologyRelation) {
         let domain_id = get_class_node_id(db, &r.domain);
         if let Some(domain_id) = domain_id {
             let mut tx = db.begin_write().unwrap();
-            tx.create_edge(rel_node_id, domain_id, "__SO_DOMAIN", HashMap::new()).unwrap();
+            tx.create_edge(rel_node_id, domain_id, "__SO_DOMAIN", HashMap::new())
+                .unwrap();
             tx.commit().unwrap();
         }
     }
@@ -77,7 +78,8 @@ fn seed_relation(db: &GraphDb, r: &OntologyRelation) {
         let range_id = get_class_node_id(db, &r.range);
         if let Some(range_id) = range_id {
             let mut tx = db.begin_write().unwrap();
-            tx.create_edge(rel_node_id, range_id, "__SO_RANGE", HashMap::new()).unwrap();
+            tx.create_edge(rel_node_id, range_id, "__SO_RANGE", HashMap::new())
+                .unwrap();
             tx.commit().unwrap();
         }
     }
@@ -105,17 +107,19 @@ fn get_graph(doc: &serde_json::Value) -> &Vec<serde_json::Value> {
 }
 
 fn get_context(doc: &serde_json::Value) -> &serde_json::Map<String, serde_json::Value> {
-    doc["@context"].as_object().expect("@context must be an object")
+    doc["@context"]
+        .as_object()
+        .expect("@context must be an object")
 }
 
 /// Find a node in @graph by rdfs:label value.
 fn find_node_by_label<'a>(
-    graph: &'a Vec<serde_json::Value>,
+    graph: &'a [serde_json::Value],
     label: &str,
 ) -> Option<&'a serde_json::Value> {
-    graph.iter().find(|node| {
-        node["rdfs:label"].as_str() == Some(label)
-    })
+    graph
+        .iter()
+        .find(|node| node["rdfs:label"].as_str() == Some(label))
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -130,11 +134,26 @@ fn empty_ontology_has_all_five_context_prefixes() {
     let doc = export_json_ld(&db).expect("export_json_ld failed on blank DB");
     let ctx = get_context(&doc);
 
-    assert_eq!(ctx.get("owl").and_then(|v| v.as_str()), Some("http://www.w3.org/2002/07/owl#"));
-    assert_eq!(ctx.get("rdfs").and_then(|v| v.as_str()), Some("http://www.w3.org/2000/01/rdf-schema#"));
-    assert_eq!(ctx.get("xsd").and_then(|v| v.as_str()), Some("http://www.w3.org/2001/XMLSchema#"));
-    assert_eq!(ctx.get("skos").and_then(|v| v.as_str()), Some("http://www.w3.org/2004/02/skos/core#"));
-    assert_eq!(ctx.get("so").and_then(|v| v.as_str()), Some("http://sparrowontology.io/schema#"));
+    assert_eq!(
+        ctx.get("owl").and_then(|v| v.as_str()),
+        Some("http://www.w3.org/2002/07/owl#")
+    );
+    assert_eq!(
+        ctx.get("rdfs").and_then(|v| v.as_str()),
+        Some("http://www.w3.org/2000/01/rdf-schema#")
+    );
+    assert_eq!(
+        ctx.get("xsd").and_then(|v| v.as_str()),
+        Some("http://www.w3.org/2001/XMLSchema#")
+    );
+    assert_eq!(
+        ctx.get("skos").and_then(|v| v.as_str()),
+        Some("http://www.w3.org/2004/02/skos/core#")
+    );
+    assert_eq!(
+        ctx.get("so").and_then(|v| v.as_str()),
+        Some("http://sparrowontology.io/schema#")
+    );
 }
 
 #[test]
@@ -142,7 +161,11 @@ fn empty_ontology_has_empty_graph_array() {
     let (_dir, db) = blank_db();
     let doc = export_json_ld(&db).expect("export_json_ld failed on blank DB");
     let graph = get_graph(&doc);
-    assert!(graph.is_empty(), "expected empty @graph on blank DB, got {} entries", graph.len());
+    assert!(
+        graph.is_empty(),
+        "expected empty @graph on blank DB, got {} entries",
+        graph.len()
+    );
 }
 
 // ── 2. Single class, no IRI ───────────────────────────────────────────────────
@@ -158,8 +181,16 @@ fn single_class_no_iri_has_correct_type_and_label() {
     assert_eq!(graph.len(), 1, "expected exactly 1 graph node");
 
     let node = &graph[0];
-    assert_eq!(node["@type"].as_str(), Some("owl:Class"), "@type must be owl:Class");
-    assert_eq!(node["rdfs:label"].as_str(), Some("Person"), "rdfs:label must be 'Person'");
+    assert_eq!(
+        node["@type"].as_str(),
+        Some("owl:Class"),
+        "@type must be owl:Class"
+    );
+    assert_eq!(
+        node["rdfs:label"].as_str(),
+        Some("Person"),
+        "rdfs:label must be 'Person'"
+    );
 
     let id = node["@id"].as_str().expect("@id must be a string");
     assert!(
@@ -225,11 +256,22 @@ fn class_with_aliases_includes_skos_alt_label_array() {
     let alt_labels = node["skos:altLabel"]
         .as_array()
         .expect("skos:altLabel must be an array");
-    assert_eq!(alt_labels.len(), 2, "expected 2 aliases, got {}", alt_labels.len());
+    assert_eq!(
+        alt_labels.len(),
+        2,
+        "expected 2 aliases, got {}",
+        alt_labels.len()
+    );
 
     let labels: Vec<&str> = alt_labels.iter().filter_map(|v| v.as_str()).collect();
-    assert!(labels.contains(&"Human"), "Human alias missing from skos:altLabel");
-    assert!(labels.contains(&"Individual"), "Individual alias missing from skos:altLabel");
+    assert!(
+        labels.contains(&"Human"),
+        "Human alias missing from skos:altLabel"
+    );
+    assert!(
+        labels.contains(&"Individual"),
+        "Individual alias missing from skos:altLabel"
+    );
 }
 
 // ── 6. Subclass relationship ──────────────────────────────────────────────────
@@ -250,13 +292,17 @@ fn subclass_entry_includes_rdfs_subclass_of_pointing_to_parent() {
 
     // Get Animal's @id to verify the subClassOf reference
     let animal_node = find_node_by_label(graph, "Animal").expect("Animal node not found");
-    let animal_id = animal_node["@id"].as_str().expect("Animal @id must be a string");
+    let animal_id = animal_node["@id"]
+        .as_str()
+        .expect("Animal @id must be a string");
 
     let dog_node = find_node_by_label(graph, "Dog").expect("Dog node not found");
     let subclass_of = dog_node["rdfs:subClassOf"]
         .as_object()
         .expect("rdfs:subClassOf must be an object with @id");
-    let parent_ref = subclass_of.get("@id").and_then(|v| v.as_str())
+    let parent_ref = subclass_of
+        .get("@id")
+        .and_then(|v| v.as_str())
         .expect("rdfs:subClassOf must have an @id key");
 
     assert_eq!(
@@ -293,18 +339,25 @@ fn relation_includes_rdfs_domain_and_rdfs_range() {
     let domain = rel_node["rdfs:domain"]
         .as_object()
         .expect("rdfs:domain must be an object with @id");
-    let domain_id = domain.get("@id").and_then(|v| v.as_str())
+    let domain_id = domain
+        .get("@id")
+        .and_then(|v| v.as_str())
         .expect("rdfs:domain must have @id");
 
     let a_node = find_node_by_label(graph, "ClassA").expect("ClassA node not found");
     let a_id = a_node["@id"].as_str().unwrap();
-    assert_eq!(domain_id, a_id, "rdfs:domain @id must point to ClassA's @id");
+    assert_eq!(
+        domain_id, a_id,
+        "rdfs:domain @id must point to ClassA's @id"
+    );
 
     // Verify rdfs:range
     let range = rel_node["rdfs:range"]
         .as_object()
         .expect("rdfs:range must be an object with @id");
-    let range_id = range.get("@id").and_then(|v| v.as_str())
+    let range_id = range
+        .get("@id")
+        .and_then(|v| v.as_str())
         .expect("rdfs:range must have @id");
 
     let b_node = find_node_by_label(graph, "ClassB").expect("ClassB node not found");
@@ -406,7 +459,10 @@ fn class_with_required_property_includes_so_required_properties() {
         .as_array()
         .expect("so:requiredProperties must be an array when required properties exist");
     let names: Vec<&str> = req_props.iter().filter_map(|v| v.as_str()).collect();
-    assert!(names.contains(&"title"), "title must appear in so:requiredProperties");
+    assert!(
+        names.contains(&"title"),
+        "title must appear in so:requiredProperties"
+    );
 }
 
 // ── Bonus: class without description omits rdfs:comment ───────────────────────

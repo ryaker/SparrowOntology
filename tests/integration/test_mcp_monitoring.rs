@@ -2,7 +2,6 @@
 ///
 /// All tests call `sparrowdb_ontology_mcp::tools::handle_tool_call` in-process.
 /// No binary is launched.
-
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
@@ -149,7 +148,10 @@ fn stats_entities_section_is_present() {
     let total = entities["total"]
         .as_i64()
         .expect("entities.total should be an integer");
-    assert_eq!(total, 1, "entities.total should be 1 after creating one entity");
+    assert_eq!(
+        total, 1,
+        "entities.total should be 1 after creating one entity"
+    );
 
     let by_class = entities["by_class"]
         .as_object()
@@ -170,12 +172,7 @@ fn stats_unseeded_classes_lists_newly_defined_class() {
     let (_dir, db) = initialized_db();
 
     // Define a new class without adding any properties — it should appear as unseeded
-    handle_tool_call(
-        &db,
-        "define_class",
-        Some(json!({"name": "Widget"})),
-    )
-    .unwrap();
+    handle_tool_call(&db, "define_class", Some(json!({"name": "Widget"}))).unwrap();
 
     let result = call(&db, "stats", json!({}));
 

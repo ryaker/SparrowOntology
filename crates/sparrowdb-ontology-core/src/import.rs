@@ -49,7 +49,11 @@ pub struct ImportResult {
 
 impl ImportResult {
     fn new() -> Self {
-        Self { created: 0, skipped: 0, errors: Vec::new() }
+        Self {
+            created: 0,
+            skipped: 0,
+            errors: Vec::new(),
+        }
     }
 
     pub fn error_count(&self) -> usize {
@@ -113,7 +117,10 @@ pub fn import_records(
             Err(e) => {
                 let msg = e.to_string();
                 if skip_errors {
-                    result.errors.push(ImportError { row: row_idx + 1, message: msg });
+                    result.errors.push(ImportError {
+                        row: row_idx + 1,
+                        message: msg,
+                    });
                     result.skipped += 1;
                     continue;
                 } else {
@@ -165,7 +172,10 @@ fn coerce_value(
     declared: &[crate::model::OntologyProperty],
 ) -> PropertyValue {
     // Find the declared type for this property.
-    let dtype = declared.iter().find(|p| p.name == prop_name).map(|p| &p.datatype);
+    let dtype = declared
+        .iter()
+        .find(|p| p.name == prop_name)
+        .map(|p| &p.datatype);
 
     match dtype {
         Some(PropertyType::Int64) => {
@@ -192,9 +202,7 @@ fn coerce_value(
 }
 
 /// Convert a PropertyValue map to the storage-layer StoreValue map.
-fn property_values_to_store(
-    props: &HashMap<String, PropertyValue>,
-) -> HashMap<String, StoreValue> {
+fn property_values_to_store(props: &HashMap<String, PropertyValue>) -> HashMap<String, StoreValue> {
     props
         .iter()
         .filter_map(|(k, v)| property_value_to_store(v).map(|sv| (k.clone(), sv)))

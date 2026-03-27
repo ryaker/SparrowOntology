@@ -6,27 +6,14 @@ use sparrowdb::GraphDb;
 
 use crate::error::mcp_error;
 
-pub fn handle_tool_call(
-    db: &GraphDb,
-    name: &str,
-    params: Option<Value>,
-) -> Result<Value, Value> {
+pub fn handle_tool_call(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value, Value> {
     match name {
         // Schema / ontology-definition tools
-        "start_here"
-        | "init"
-        | "get_ontology"
-        | "define_class"
-        | "define_relation"
-        | "add_alias"
-        | "add_property"
-        | "define_subclass"
-        | "define_subproperty"
-        | "resolve_name"
-        | "health"
-        | "stats"
-        | "export_json_ld"
-        | "import_turtle" => schema::dispatch(db, name, params),
+        "start_here" | "init" | "get_ontology" | "define_class" | "define_relation"
+        | "add_alias" | "add_property" | "define_subclass" | "define_subproperty"
+        | "resolve_name" | "health" | "stats" | "export_json_ld" | "import_turtle" => {
+            schema::dispatch(db, name, params)
+        }
 
         // Data / entity tools
         "create_entity"

@@ -348,7 +348,10 @@ pub fn research_notes_classes() -> Vec<OntologyClass> {
     vec![
         OntologyClass::new("Concept", "An idea, skill, domain, or area of knowledge"),
         OntologyClass::new("Document", "A file, note, article, or written artifact"),
-        OntologyClass::new("Claim", "An assertion or proposition that can be supported or contradicted"),
+        OntologyClass::new(
+            "Claim",
+            "An assertion or proposition that can be supported or contradicted",
+        ),
         OntologyClass::new("Person", "A human individual"),
         OntologyClass::new("Asset", "A resource, dataset, tool, or artifact"),
     ]

@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{
-    import_records, init, ImportTemplate, SoError,
-};
+use sparrowdb_ontology_core::{import_records, init, ImportTemplate, SoError};
 
 // ── DB helpers ────────────────────────────────────────────────────────────────
 
@@ -31,7 +29,10 @@ fn person_template() -> ImportTemplate {
 // ── Helpers to build records ───────────────────────────────────────────────────
 
 fn record(pairs: &[(&str, &str)]) -> HashMap<String, String> {
-    pairs.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect()
+    pairs
+        .iter()
+        .map(|(k, v)| (k.to_string(), v.to_string()))
+        .collect()
 }
 
 // ── Tests ──────────────────────────────────────────────────────────────────────
@@ -42,8 +43,16 @@ fn import_basic_records() {
     let template = person_template();
 
     let records = vec![
-        record(&[("full_name", "Alice"), ("email_address", "alice@example.com"), ("id", "1")]),
-        record(&[("full_name", "Bob"), ("email_address", "bob@example.com"), ("id", "2")]),
+        record(&[
+            ("full_name", "Alice"),
+            ("email_address", "alice@example.com"),
+            ("id", "1"),
+        ]),
+        record(&[
+            ("full_name", "Bob"),
+            ("email_address", "bob@example.com"),
+            ("id", "2"),
+        ]),
     ];
 
     let result = import_records(&db, &records, &template, false, false).unwrap();
@@ -57,9 +66,7 @@ fn import_dry_run_writes_nothing() {
     let (_dir, db) = initialized_db();
     let template = person_template();
 
-    let records = vec![
-        record(&[("full_name", "DryPerson"), ("id", "42")]),
-    ];
+    let records = vec![record(&[("full_name", "DryPerson"), ("id", "42")])];
 
     // Dry run — should validate and count but not persist.
     let result = import_records(&db, &records, &template, true, false).unwrap();
@@ -68,7 +75,10 @@ fn import_dry_run_writes_nothing() {
     // Verify nothing actually exists by querying (no Cypher find API, so just check no error
     // from a second import with the same data — idempotent merge is fine here).
     let result2 = import_records(&db, &records, &template, false, false).unwrap();
-    assert_eq!(result2.created, 1, "real import after dry run should succeed");
+    assert_eq!(
+        result2.created, 1,
+        "real import after dry run should succeed"
+    );
 }
 
 #[test]

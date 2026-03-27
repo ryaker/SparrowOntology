@@ -1,10 +1,7 @@
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_core::{
-    add_alias, add_property, define_subclass, export_schema, import_schema, init,
-    model::AliasKind,
-    snapshot::SNAPSHOT_VERSION,
-    StarterKind,
-    validation::ValidationContext,
+    add_alias, add_property, define_subclass, export_schema, import_schema, init, model::AliasKind,
+    snapshot::SNAPSHOT_VERSION, validation::ValidationContext, StarterKind,
 };
 
 fn fresh_world_model_db() -> (tempfile::TempDir, GraphDb) {
@@ -41,7 +38,11 @@ fn export_captures_world_model_relations() {
     let snap = export_schema(&db).unwrap();
     assert!(!snap.relations.is_empty(), "no relations in snapshot");
     // WORKS_FOR should have domain=Person, range=Organization
-    let wf = snap.relations.iter().find(|r| r.name == "WORKS_FOR").unwrap();
+    let wf = snap
+        .relations
+        .iter()
+        .find(|r| r.name == "WORKS_FOR")
+        .unwrap();
     assert_eq!(wf.domain, "Person");
     assert_eq!(wf.range, "Organization");
 }
@@ -75,7 +76,10 @@ fn snapshot_roundtrip_custom_class_and_alias() {
     let db_b = GraphDb::open(dir_b.path()).unwrap();
     let result = import_schema(&db_b, &snap).unwrap();
 
-    assert!(result.classes_imported >= 10, "expected world-model classes");
+    assert!(
+        result.classes_imported >= 10,
+        "expected world-model classes"
+    );
     assert!(result.aliases_imported >= 1, "Org alias missing");
 
     // Alias should resolve in new DB
@@ -89,16 +93,29 @@ fn snapshot_roundtrip_subclass_edge() {
     let (dir_a, db_a) = fresh_world_model_db();
 
     // Employee is a subclass of Person
-    let employee = sparrowdb_ontology_core::model::OntologyClass::new("Employee", "An employed person");
+    let employee =
+        sparrowdb_ontology_core::model::OntologyClass::new("Employee", "An employed person");
     {
         use sparrowdb_storage::node_store::Value as StoreValue;
         let mut props = std::collections::HashMap::new();
-        props.insert("symbol_id".to_string(), StoreValue::Bytes(employee.symbol_id.as_bytes().to_vec()));
+        props.insert(
+            "symbol_id".to_string(),
+            StoreValue::Bytes(employee.symbol_id.as_bytes().to_vec()),
+        );
         props.insert("name".to_string(), StoreValue::Bytes(b"Employee".to_vec()));
-        props.insert("description".to_string(), StoreValue::Bytes(b"An employed person".to_vec()));
+        props.insert(
+            "description".to_string(),
+            StoreValue::Bytes(b"An employed person".to_vec()),
+        );
         props.insert("status".to_string(), StoreValue::Bytes(b"active".to_vec()));
-        props.insert("created_at".to_string(), StoreValue::Int64(employee.created_at));
-        props.insert("updated_at".to_string(), StoreValue::Int64(employee.updated_at));
+        props.insert(
+            "created_at".to_string(),
+            StoreValue::Int64(employee.created_at),
+        );
+        props.insert(
+            "updated_at".to_string(),
+            StoreValue::Int64(employee.updated_at),
+        );
         let mut tx = db_a.begin_write().unwrap();
         tx.merge_node("__SO_Class", props).unwrap();
         tx.commit().unwrap();
@@ -106,7 +123,10 @@ fn snapshot_roundtrip_subclass_edge() {
     define_subclass(&db_a, "Employee", "Person").unwrap();
 
     let snap = export_schema(&db_a).unwrap();
-    assert!(!snap.subclass_edges.is_empty(), "subclass edge not captured");
+    assert!(
+        !snap.subclass_edges.is_empty(),
+        "subclass edge not captured"
+    );
     drop(db_a);
     drop(dir_a);
 
@@ -133,7 +153,11 @@ fn snapshot_roundtrip_property_with_unique_and_allowed_values() {
         "string",
         false,
         false,
-        Some(vec!["low".to_string(), "medium".to_string(), "high".to_string()]),
+        Some(vec![
+            "low".to_string(),
+            "medium".to_string(),
+            "high".to_string(),
+        ]),
     )
     .unwrap();
     add_property(&db_a, "Person", "badge_id", "string", false, true, None).unwrap();

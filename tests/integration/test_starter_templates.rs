@@ -1,6 +1,6 @@
 use sparrowdb::GraphDb;
-use sparrowdb_ontology_core::{init, StarterKind};
 use sparrowdb_execution::Value as ExecValue;
+use sparrowdb_ontology_core::{init, StarterKind};
 
 fn open_db() -> (tempfile::TempDir, GraphDb) {
     let dir = tempfile::tempdir().unwrap();
@@ -10,9 +10,7 @@ fn open_db() -> (tempfile::TempDir, GraphDb) {
 
 /// Returns sorted class names present in the DB after init.
 fn class_names(db: &GraphDb) -> Vec<String> {
-    let result = db
-        .execute("MATCH (c:__SO_Class) RETURN c.name")
-        .unwrap();
+    let result = db.execute("MATCH (c:__SO_Class) RETURN c.name").unwrap();
     let mut names: Vec<String> = result
         .rows
         .iter()
@@ -32,9 +30,7 @@ fn class_names(db: &GraphDb) -> Vec<String> {
 
 /// Returns sorted relation names present in the DB after init.
 fn relation_names(db: &GraphDb) -> Vec<String> {
-    let result = db
-        .execute("MATCH (r:__SO_Relation) RETURN r.name")
-        .unwrap();
+    let result = db.execute("MATCH (r:__SO_Relation) RETURN r.name").unwrap();
     let mut names: Vec<String> = result
         .rows
         .iter()
@@ -75,7 +71,13 @@ fn personal_knowledge_creates_expected_relations() {
     init(&db, Some(StarterKind::PersonalKnowledge), false).unwrap();
 
     let names = relation_names(&db);
-    for expected in &["KNOWS", "LOCATED_IN", "OCCURRED_AT", "PART_OF", "RELATED_TO"] {
+    for expected in &[
+        "KNOWS",
+        "LOCATED_IN",
+        "OCCURRED_AT",
+        "PART_OF",
+        "RELATED_TO",
+    ] {
         assert!(
             names.contains(&expected.to_string()),
             "missing relation {expected}: {names:?}"
@@ -89,7 +91,8 @@ fn personal_knowledge_starter_kind_in_result() {
     let result = init(&db, Some(StarterKind::PersonalKnowledge), false).unwrap();
     assert!(
         matches!(result.starter, StarterKind::PersonalKnowledge),
-        "unexpected starter kind: {:?}", result.starter
+        "unexpected starter kind: {:?}",
+        result.starter
     );
 }
 
@@ -116,7 +119,14 @@ fn professional_network_creates_expected_relations() {
     init(&db, Some(StarterKind::ProfessionalNetwork), false).unwrap();
 
     let names = relation_names(&db);
-    for expected in &["DEPENDS_ON", "HAS_ROLE", "LEADS", "MEMBER_OF", "PARTICIPATED_IN", "WORKS_FOR"] {
+    for expected in &[
+        "DEPENDS_ON",
+        "HAS_ROLE",
+        "LEADS",
+        "MEMBER_OF",
+        "PARTICIPATED_IN",
+        "WORKS_FOR",
+    ] {
         assert!(
             names.contains(&expected.to_string()),
             "missing relation {expected}: {names:?}"
@@ -130,7 +140,8 @@ fn professional_network_starter_kind_in_result() {
     let result = init(&db, Some(StarterKind::ProfessionalNetwork), false).unwrap();
     assert!(
         matches!(result.starter, StarterKind::ProfessionalNetwork),
-        "unexpected starter kind: {:?}", result.starter
+        "unexpected starter kind: {:?}",
+        result.starter
     );
 }
 
@@ -157,7 +168,14 @@ fn research_notes_creates_expected_relations() {
     init(&db, Some(StarterKind::ResearchNotes), false).unwrap();
 
     let names = relation_names(&db);
-    for expected in &["AUTHORED", "CITES", "CONTRADICTS", "DERIVED_FROM", "SUPPORTS", "TAGGED_WITH"] {
+    for expected in &[
+        "AUTHORED",
+        "CITES",
+        "CONTRADICTS",
+        "DERIVED_FROM",
+        "SUPPORTS",
+        "TAGGED_WITH",
+    ] {
         assert!(
             names.contains(&expected.to_string()),
             "missing relation {expected}: {names:?}"
@@ -171,6 +189,7 @@ fn research_notes_starter_kind_in_result() {
     let result = init(&db, Some(StarterKind::ResearchNotes), false).unwrap();
     assert!(
         matches!(result.starter, StarterKind::ResearchNotes),
-        "unexpected starter kind: {:?}", result.starter
+        "unexpected starter kind: {:?}",
+        result.starter
     );
 }

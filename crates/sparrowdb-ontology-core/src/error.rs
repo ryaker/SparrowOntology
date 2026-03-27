@@ -1,7 +1,9 @@
 /// All errors that sparrowdb-ontology-core can return.
 #[derive(Debug, thiserror::Error)]
 pub enum SoError {
-    #[error("'{0}' starts with '__SO_' which is reserved for internal use. Choose a different name.")]
+    #[error(
+        "'{0}' starts with '__SO_' which is reserved for internal use. Choose a different name."
+    )]
     ReservedNamespace(String),
 
     #[error("'{0}' starts with '__so_' which is reserved for system use. Use a different property name. Call explain_symbol on the class to see already-declared properties.")]

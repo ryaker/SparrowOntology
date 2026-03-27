@@ -29,10 +29,12 @@ fn get_graph(doc: &serde_json::Value) -> &Vec<serde_json::Value> {
 }
 
 fn find_node_by_label<'a>(
-    graph: &'a Vec<serde_json::Value>,
+    graph: &'a [serde_json::Value],
     label: &str,
 ) -> Option<&'a serde_json::Value> {
-    graph.iter().find(|node| node["rdfs:label"].as_str() == Some(label))
+    graph
+        .iter()
+        .find(|node| node["rdfs:label"].as_str() == Some(label))
 }
 
 // ── FOAF snippet ───────────────────────────────────────────────────────────────
@@ -259,7 +261,10 @@ fn cyclic_subclass_returns_ok_with_warning() {
 "#;
 
     let result = import_turtle(&db, ttl, ImportOptions::default());
-    assert!(result.is_ok(), "import_turtle must return Ok even when a cycle is detected");
+    assert!(
+        result.is_ok(),
+        "import_turtle must return Ok even when a cycle is detected"
+    );
 
     let summary = result.unwrap();
     assert!(
@@ -288,7 +293,10 @@ fn unsupported_owl_restriction_blank_node_skipped() {
 "#;
 
     let result = import_turtle(&db, ttl, ImportOptions::default());
-    assert!(result.is_ok(), "import_turtle must not error on blank-node restrictions");
+    assert!(
+        result.is_ok(),
+        "import_turtle must not error on blank-node restrictions"
+    );
 
     let summary = result.unwrap();
     assert_eq!(
@@ -310,16 +318,24 @@ fn idempotent_reimport_both_calls_return_ok() {
     assert!(s1.is_ok(), "first import must return Ok");
     let s1 = s1.unwrap();
     assert_eq!(s1.classes_imported, 2, "first import: expected 2 classes");
-    assert_eq!(s1.relations_imported, 1, "first import: expected 1 relation");
+    assert_eq!(
+        s1.relations_imported, 1,
+        "first import: expected 1 relation"
+    );
 
     // Second import of the same Turtle — must also return Ok (no error)
     let s2 = import_turtle(&db, FOAF_TTL, ImportOptions::default());
-    assert!(s2.is_ok(), "second import of identical Turtle must also return Ok");
+    assert!(
+        s2.is_ok(),
+        "second import of identical Turtle must also return Ok"
+    );
 
     let s2 = s2.unwrap();
     // Each call reports what it wrote in that pass — at minimum no errors.
     assert!(
-        s2.warnings.iter().all(|w| !w.to_lowercase().contains("error")),
+        s2.warnings
+            .iter()
+            .all(|w| !w.to_lowercase().contains("error")),
         "second import must not produce error-level warnings, got: {:?}",
         s2.warnings
     );
@@ -422,7 +438,8 @@ fn english_label_preferred_over_other_languages() {
     // The English label must win.
     let doc = export_json_ld(&db).unwrap();
     let graph = get_graph(&doc);
-    let node = find_node_by_label(graph, "Person").expect("class 'Person' (English label) not found in @graph");
+    let node = find_node_by_label(graph, "Person")
+        .expect("class 'Person' (English label) not found in @graph");
     assert_eq!(
         node["rdfs:label"].as_str(),
         Some("Person"),
@@ -439,10 +456,24 @@ fn empty_turtle_returns_empty_summary() {
     let (_dir, db) = blank_db();
     let summary = import_turtle(&db, "", ImportOptions::default()).unwrap();
 
-    assert_eq!(summary.classes_imported, 0, "empty input: classes_imported must be 0");
-    assert_eq!(summary.relations_imported, 0, "empty input: relations_imported must be 0");
-    assert_eq!(summary.subclasses_imported, 0, "empty input: subclasses_imported must be 0");
-    assert_eq!(summary.aliases_imported, 0, "empty input: aliases_imported must be 0");
-    assert!(summary.warnings.is_empty(), "empty input: warnings must be empty");
+    assert_eq!(
+        summary.classes_imported, 0,
+        "empty input: classes_imported must be 0"
+    );
+    assert_eq!(
+        summary.relations_imported, 0,
+        "empty input: relations_imported must be 0"
+    );
+    assert_eq!(
+        summary.subclasses_imported, 0,
+        "empty input: subclasses_imported must be 0"
+    );
+    assert_eq!(
+        summary.aliases_imported, 0,
+        "empty input: aliases_imported must be 0"
+    );
+    assert!(
+        summary.warnings.is_empty(),
+        "empty input: warnings must be empty"
+    );
 }
-

@@ -9,7 +9,9 @@ use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
-use sparrowdb_ontology_core::{add_alias, add_property, define_subclass, init, resolve, StarterKind};
+use sparrowdb_ontology_core::{
+    add_alias, add_property, define_subclass, init, resolve, StarterKind,
+};
 use sparrowdb_ontology_core::{DomainRangeStrategy, ImportOptions};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
@@ -112,8 +114,12 @@ pub fn tool_init(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
 
     let (starter, starter_name) = match args["starter"].as_str().unwrap_or("WorldModel") {
         "Blank" | "blank" => (StarterKind::Blank, "Blank"),
-        "PersonalKnowledge" | "personal_knowledge" => (StarterKind::PersonalKnowledge, "PersonalKnowledge"),
-        "ProfessionalNetwork" | "professional_network" => (StarterKind::ProfessionalNetwork, "ProfessionalNetwork"),
+        "PersonalKnowledge" | "personal_knowledge" => {
+            (StarterKind::PersonalKnowledge, "PersonalKnowledge")
+        }
+        "ProfessionalNetwork" | "professional_network" => {
+            (StarterKind::ProfessionalNetwork, "ProfessionalNetwork")
+        }
         "ResearchNotes" | "research_notes" => (StarterKind::ResearchNotes, "ResearchNotes"),
         _ => (StarterKind::WorldModel, "WorldModel"),
     };
@@ -221,11 +227,7 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
                 "MATCH (c:{CLASS_LABEL})-[:{HAS_PROPERTY_REL}]->(p:{PROPERTY_LABEL}) RETURN c.name"
             );
             match execute_or_empty(db, &q5) {
-                Ok(r) => r
-                    .rows
-                    .iter()
-                    .map(|row| str_val(row, 0))
-                    .collect(),
+                Ok(r) => r.rows.iter().map(|row| str_val(row, 0)).collect(),
                 Err(_) => std::collections::HashSet::new(),
             }
         };
@@ -297,22 +299,34 @@ pub fn start_here(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> 
 
 // ── get_ontology ──────────────────────────────────────────────────────────────
 
-pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
+pub fn get_ontology(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+
+    // Parse pagination parameters for each section
+    let class_limit = args["class_limit"].as_u64().unwrap_or(50) as usize;
+    let class_offset = args["class_offset"].as_u64().unwrap_or(0) as usize;
+    let relation_limit = args["relation_limit"].as_u64().unwrap_or(50) as usize;
+    let relation_offset = args["relation_offset"].as_u64().unwrap_or(0) as usize;
+    let property_limit = args["property_limit"].as_u64().unwrap_or(50) as usize;
+    let property_offset = args["property_offset"].as_u64().unwrap_or(0) as usize;
+    let alias_limit = args["alias_limit"].as_u64().unwrap_or(50) as usize;
+    let alias_offset = args["alias_offset"].as_u64().unwrap_or(0) as usize;
+
     // Query all classes
-    let classes = {
+    let (classes, class_pagination) = {
         let q = format!(
             "MATCH (c:{CLASS_LABEL}) RETURN c.symbol_id, c.name, c.description, c.status, c.created_at, c.updated_at, c.iri"
         );
         let result = execute_or_empty(db, &q)?;
-        let mut out = Vec::new();
+        let mut all_classes = Vec::new();
         for row in &result.rows {
-            let symbol_id = str_val(&row, 0);
-            let name = str_val(&row, 1);
-            let description = str_val_opt(&row, 2);
-            let status = str_val(&row, 3);
-            let created_at = int_val(&row, 4);
-            let updated_at = int_val(&row, 5);
-            let iri = str_val_opt(&row, 6);
+            let symbol_id = str_val(row, 0);
+            let name = str_val(row, 1);
+            let description = str_val_opt(row, 2);
+            let status = str_val(row, 3);
+            let created_at = int_val(row, 4);
+            let updated_at = int_val(row, 5);
+            let iri = str_val_opt(row, 6);
 
             // Aliases for this class
             let aliases = get_aliases_for(db, &name, "class")?;
@@ -321,7 +335,7 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
             // Properties
             let properties = get_properties_for_class(db, &symbol_id)?;
 
-            out.push(json!({
+            all_classes.push(json!({
                 "symbol_id": symbol_id,
                 "name": name,
                 "description": description,
@@ -334,31 +348,45 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
                 "properties": properties,
             }));
         }
-        out
+
+        let total = all_classes.len();
+        let has_more = class_offset + class_limit < total;
+        let paginated = all_classes
+            .into_iter()
+            .skip(class_offset)
+            .take(class_limit)
+            .collect::<Vec<_>>();
+        let pagination = json!({
+            "total_count": total,
+            "offset": class_offset,
+            "limit": class_limit,
+            "has_more": has_more,
+        });
+        (paginated, pagination)
     };
 
     // Query all relations
-    let relations = {
+    let (relations, relation_pagination) = {
         let q = format!(
             "MATCH (r:{RELATION_LABEL}) RETURN r.symbol_id, r.name, r.description, r.status, r.directed, r.created_at, r.updated_at, r.iri"
         );
         let result = execute_or_empty(db, &q)?;
-        let mut out = Vec::new();
+        let mut all_relations = Vec::new();
         for row in &result.rows {
-            let symbol_id = str_val(&row, 0);
-            let name = str_val(&row, 1);
-            let description = str_val_opt(&row, 2);
-            let status = str_val(&row, 3);
-            let directed = int_val(&row, 4) != 0;
-            let created_at = int_val(&row, 5);
-            let updated_at = int_val(&row, 6);
-            let iri = str_val_opt(&row, 7);
+            let symbol_id = str_val(row, 0);
+            let name = str_val(row, 1);
+            let description = str_val_opt(row, 2);
+            let status = str_val(row, 3);
+            let directed = int_val(row, 4) != 0;
+            let created_at = int_val(row, 5);
+            let updated_at = int_val(row, 6);
+            let iri = str_val_opt(row, 7);
 
             let domain = get_domain_for_relation(db, &name)?;
             let range = get_range_for_relation(db, &name)?;
             let aliases = get_aliases_for(db, &name, "relation")?;
 
-            out.push(json!({
+            all_relations.push(json!({
                 "symbol_id": symbol_id,
                 "name": name,
                 "description": description,
@@ -372,53 +400,106 @@ pub fn get_ontology(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value
                 "aliases": aliases,
             }));
         }
-        out
+
+        let total = all_relations.len();
+        let has_more = relation_offset + relation_limit < total;
+        let paginated = all_relations
+            .into_iter()
+            .skip(relation_offset)
+            .take(relation_limit)
+            .collect::<Vec<_>>();
+        let pagination = json!({
+            "total_count": total,
+            "offset": relation_offset,
+            "limit": relation_limit,
+            "has_more": has_more,
+        });
+        (paginated, pagination)
     };
 
     // Query all aliases
-    let aliases = {
-        let q = format!(
-            "MATCH (a:{ALIAS_LABEL}) RETURN a.name, a.kind, a.target_name, a.created_at"
-        );
+    let (aliases, alias_pagination) = {
+        let q =
+            format!("MATCH (a:{ALIAS_LABEL}) RETURN a.name, a.kind, a.target_name, a.created_at");
         let result = execute_or_empty(db, &q)?;
-        let mut out = Vec::new();
+        let mut all_aliases = Vec::new();
         for row in &result.rows {
-            out.push(json!({
-                "name": str_val(&row, 0),
-                "kind": str_val(&row, 1),
-                "target_name": str_val(&row, 2),
-                "created_at": int_val(&row, 3),
+            all_aliases.push(json!({
+                "name": str_val(row, 0),
+                "kind": str_val(row, 1),
+                "target_name": str_val(row, 2),
+                "created_at": int_val(row, 3),
             }));
         }
-        out
+
+        let total = all_aliases.len();
+        let has_more = alias_offset + alias_limit < total;
+        let paginated = all_aliases
+            .into_iter()
+            .skip(alias_offset)
+            .take(alias_limit)
+            .collect::<Vec<_>>();
+        let pagination = json!({
+            "total_count": total,
+            "offset": alias_offset,
+            "limit": alias_limit,
+            "has_more": has_more,
+        });
+        (paginated, pagination)
     };
 
     // Query all properties
-    let properties = {
+    let (properties, property_pagination) = {
         let q = format!(
             "MATCH (p:{PROPERTY_LABEL}) RETURN p.symbol_id, p.name, p.datatype, p.required, p.owner_symbol_id, p.owner_kind, p.created_at"
         );
         let result = execute_or_empty(db, &q)?;
-        let mut out = Vec::new();
+        let mut all_properties = Vec::new();
         for row in &result.rows {
-            out.push(json!({
-                "symbol_id": str_val(&row, 0),
-                "name": str_val(&row, 1),
-                "datatype": str_val(&row, 2),
-                "required": int_val(&row, 3) != 0,
-                "owner_symbol_id": str_val(&row, 4),
-                "owner_kind": str_val(&row, 5),
-                "created_at": int_val(&row, 6),
+            all_properties.push(json!({
+                "symbol_id": str_val(row, 0),
+                "name": str_val(row, 1),
+                "datatype": str_val(row, 2),
+                "required": int_val(row, 3) != 0,
+                "owner_symbol_id": str_val(row, 4),
+                "owner_kind": str_val(row, 5),
+                "created_at": int_val(row, 6),
             }));
         }
-        out
+
+        let total = all_properties.len();
+        let has_more = property_offset + property_limit < total;
+        let paginated = all_properties
+            .into_iter()
+            .skip(property_offset)
+            .take(property_limit)
+            .collect::<Vec<_>>();
+        let pagination = json!({
+            "total_count": total,
+            "offset": property_offset,
+            "limit": property_limit,
+            "has_more": has_more,
+        });
+        (paginated, pagination)
     };
 
     let ontology = json!({
-        "classes": classes,
-        "relations": relations,
-        "aliases": aliases,
-        "properties": properties,
+        "classes": {
+            "data": classes,
+            "pagination": class_pagination,
+        },
+        "relations": {
+            "data": relations,
+            "pagination": relation_pagination,
+        },
+        "aliases": {
+            "data": aliases,
+            "pagination": alias_pagination,
+        },
+        "properties": {
+            "data": properties,
+            "pagination": property_pagination,
+        },
     });
 
     Ok(json!({
@@ -451,9 +532,9 @@ pub fn define_class(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
     let symbol_id = uuid::Uuid::new_v4().to_string();
     let now = now_ms();
 
-    let mut tx = db.begin_write().map_err(|e| {
-        mcp_error(-32603, "Database error", json!({"detail": e.to_string()}))
-    })?;
+    let mut tx = db
+        .begin_write()
+        .map_err(|e| mcp_error(-32603, "Database error", json!({"detail": e.to_string()})))?;
 
     tx.merge_node(
         CLASS_LABEL,
@@ -467,11 +548,16 @@ pub fn define_class(db: &GraphDb, params: Option<Value>) -> Result<Value, Value>
             ("updated_at", iv(now)),
         ]),
     )
-    .map_err(|e| mcp_error(-32603, "Failed to create class", json!({"detail": e.to_string()})))?;
-
-    tx.commit().map_err(|e| {
-        mcp_error(-32603, "Failed to commit", json!({"detail": e.to_string()}))
+    .map_err(|e| {
+        mcp_error(
+            -32603,
+            "Failed to create class",
+            json!({"detail": e.to_string()}),
+        )
     })?;
+
+    tx.commit()
+        .map_err(|e| mcp_error(-32603, "Failed to commit", json!({"detail": e.to_string()})))?;
 
     let iri_opt: Option<&str> = if iri.is_empty() { None } else { Some(iri) };
     let created = json!({
@@ -528,9 +614,9 @@ pub fn define_relation(db: &GraphDb, params: Option<Value>) -> Result<Value, Val
     let now = now_ms();
 
     // Create the relation node
-    let mut tx = db.begin_write().map_err(|e| {
-        mcp_error(-32603, "Database error", json!({"detail": e.to_string()}))
-    })?;
+    let mut tx = db
+        .begin_write()
+        .map_err(|e| mcp_error(-32603, "Database error", json!({"detail": e.to_string()})))?;
 
     let rel_node_id = tx
         .merge_node(
@@ -547,11 +633,19 @@ pub fn define_relation(db: &GraphDb, params: Option<Value>) -> Result<Value, Val
             ]),
         )
         .map_err(|e| {
-            mcp_error(-32603, "Failed to create relation node", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to create relation node",
+                json!({"detail": e.to_string()}),
+            )
         })?;
 
     tx.commit().map_err(|e| {
-        mcp_error(-32603, "Failed to commit relation node", json!({"detail": e.to_string()}))
+        mcp_error(
+            -32603,
+            "Failed to commit relation node",
+            json!({"detail": e.to_string()}),
+        )
     })?;
 
     // Fetch domain and range node IDs by symbol_id
@@ -559,19 +653,31 @@ pub fn define_relation(db: &GraphDb, params: Option<Value>) -> Result<Value, Val
     let range_node_id = get_node_id_by_symbol_id(db, CLASS_LABEL, &range_sym.symbol_id)?;
 
     // Create DOMAIN and RANGE edges
-    let mut tx2 = db.begin_write().map_err(|e| {
-        mcp_error(-32603, "Database error", json!({"detail": e.to_string()}))
-    })?;
+    let mut tx2 = db
+        .begin_write()
+        .map_err(|e| mcp_error(-32603, "Database error", json!({"detail": e.to_string()})))?;
     tx2.create_edge(rel_node_id, domain_node_id, DOMAIN_REL, HashMap::new())
         .map_err(|e| {
-            mcp_error(-32603, "Failed to create DOMAIN edge", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to create DOMAIN edge",
+                json!({"detail": e.to_string()}),
+            )
         })?;
     tx2.create_edge(rel_node_id, range_node_id, RANGE_REL, HashMap::new())
         .map_err(|e| {
-            mcp_error(-32603, "Failed to create RANGE edge", json!({"detail": e.to_string()}))
+            mcp_error(
+                -32603,
+                "Failed to create RANGE edge",
+                json!({"detail": e.to_string()}),
+            )
         })?;
     tx2.commit().map_err(|e| {
-        mcp_error(-32603, "Failed to commit edges", json!({"detail": e.to_string()}))
+        mcp_error(
+            -32603,
+            "Failed to commit edges",
+            json!({"detail": e.to_string()}),
+        )
     })?;
 
     let iri_opt: Option<&str> = if iri.is_empty() { None } else { Some(iri) };
@@ -688,9 +794,9 @@ pub fn define_subproperty(db: &GraphDb, params: Option<Value>) -> Result<Value, 
     let child_id = get_node_id_by_symbol_id(db, RELATION_LABEL, &child_sym.symbol_id)?;
     let parent_id = get_node_id_by_symbol_id(db, RELATION_LABEL, &parent_sym.symbol_id)?;
 
-    let mut tx = db.begin_write().map_err(|e| {
-        mcp_error(-32603, "Database error", json!({"detail": e.to_string()}))
-    })?;
+    let mut tx = db
+        .begin_write()
+        .map_err(|e| mcp_error(-32603, "Database error", json!({"detail": e.to_string()})))?;
     tx.create_edge(child_id, parent_id, SUBPROPERTY_OF_REL, HashMap::new())
         .map_err(|e| {
             mcp_error(
@@ -699,9 +805,8 @@ pub fn define_subproperty(db: &GraphDb, params: Option<Value>) -> Result<Value, 
                 json!({"detail": e.to_string()}),
             )
         })?;
-    tx.commit().map_err(|e| {
-        mcp_error(-32603, "Failed to commit", json!({"detail": e.to_string()}))
-    })?;
+    tx.commit()
+        .map_err(|e| mcp_error(-32603, "Failed to commit", json!({"detail": e.to_string()})))?;
 
     Ok(json!({
         "content": [{
@@ -795,9 +900,8 @@ pub fn tool_resolve_name(db: &GraphDb, params: Option<Value>) -> Result<Value, V
         }
     };
 
-    let resolved =
-        resolve(db, name, kind.clone())
-            .map_err(|e| mcp_error(-32602, "Resolution failed", so_error_to_mcp(&e)))?;
+    let resolved = resolve(db, name, kind.clone())
+        .map_err(|e| mcp_error(-32602, "Resolution failed", so_error_to_mcp(&e)))?;
 
     // Fetch all aliases of the canonical
     let aliases = get_aliases_for(db, &resolved.canonical_name, kind_str)?;
@@ -851,9 +955,11 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
     let datatype = args["datatype"].as_str().unwrap_or("string");
     let required = args["required"].as_bool().unwrap_or(false);
     let unique = args["unique"].as_bool().unwrap_or(false);
-    let allowed_values: Option<Vec<String>> = args["allowed_values"]
-        .as_array()
-        .map(|arr| arr.iter().filter_map(|v| v.as_str().map(str::to_string)).collect());
+    let allowed_values: Option<Vec<String>> = args["allowed_values"].as_array().map(|arr| {
+        arr.iter()
+            .filter_map(|v| v.as_str().map(str::to_string))
+            .collect()
+    });
 
     let valid_types = ["string", "int64", "float64", "bool", "date", "variant"];
     if !valid_types.contains(&datatype) {
@@ -893,8 +999,16 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
 
 // ── Query helpers ─────────────────────────────────────────────────────────────
 
-fn get_aliases_for(db: &GraphDb, canonical_name: &str, kind_str: &str) -> Result<Vec<String>, Value> {
-    let target_label = if kind_str == "relation" { RELATION_LABEL } else { CLASS_LABEL };
+fn get_aliases_for(
+    db: &GraphDb,
+    canonical_name: &str,
+    kind_str: &str,
+) -> Result<Vec<String>, Value> {
+    let target_label = if kind_str == "relation" {
+        RELATION_LABEL
+    } else {
+        CLASS_LABEL
+    };
     let q = format!(
         "MATCH (a:{ALIAS_LABEL})-[:{ALIAS_OF_REL}]->(c:{target_label} {{name: $cname}}) \
          WHERE a.kind = $kind RETURN a.name"
@@ -903,7 +1017,10 @@ fn get_aliases_for(db: &GraphDb, canonical_name: &str, kind_str: &str) -> Result
         db,
         &q,
         HashMap::from([
-            ("cname".to_string(), ExecValue::String(canonical_name.to_string())),
+            (
+                "cname".to_string(),
+                ExecValue::String(canonical_name.to_string()),
+            ),
             ("kind".to_string(), ExecValue::String(kind_str.to_string())),
         ]),
     )?;
@@ -923,7 +1040,10 @@ fn get_direct_subclasses(db: &GraphDb, class_name: &str) -> Result<Vec<String>, 
     let result = execute_params_or_empty(
         db,
         &q,
-        HashMap::from([("cname".to_string(), ExecValue::String(class_name.to_string()))]),
+        HashMap::from([(
+            "cname".to_string(),
+            ExecValue::String(class_name.to_string()),
+        )]),
     )?;
     let mut names = Vec::new();
     for row in &result.rows {
@@ -965,7 +1085,13 @@ fn get_domain_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String
         .rows
         .first()
         .and_then(|row| row.first())
-        .and_then(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None }))
+        .and_then(|v| {
+            if let ExecValue::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }))
 }
 
 fn get_range_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String>, Value> {
@@ -981,7 +1107,13 @@ fn get_range_for_relation(db: &GraphDb, rel_name: &str) -> Result<Option<String>
         .rows
         .first()
         .and_then(|row| row.first())
-        .and_then(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None }))
+        .and_then(|v| {
+            if let ExecValue::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        }))
 }
 
 fn get_properties_for_class(db: &GraphDb, class_symbol_id: &str) -> Result<Vec<Value>, Value> {
@@ -992,24 +1124,23 @@ fn get_properties_for_class(db: &GraphDb, class_symbol_id: &str) -> Result<Vec<V
     let result = execute_params_or_empty(
         db,
         &q,
-        HashMap::from([("sid".to_string(), ExecValue::String(class_symbol_id.to_string()))]),
+        HashMap::from([(
+            "sid".to_string(),
+            ExecValue::String(class_symbol_id.to_string()),
+        )]),
     )?;
     let mut props = Vec::new();
     for row in &result.rows {
         props.push(json!({
-            "name": str_val(&row, 0),
-            "datatype": str_val(&row, 1),
-            "required": int_val(&row, 2) != 0,
+            "name": str_val(row, 0),
+            "datatype": str_val(row, 1),
+            "required": int_val(row, 2) != 0,
         }));
     }
     Ok(props)
 }
 
-fn get_node_id_by_symbol_id(
-    db: &GraphDb,
-    label: &str,
-    symbol_id: &str,
-) -> Result<NodeId, Value> {
+fn get_node_id_by_symbol_id(db: &GraphDb, label: &str, symbol_id: &str) -> Result<NodeId, Value> {
     let q = format!("MATCH (n:{label} {{symbol_id: $sid}}) RETURN id(n)");
     let result = execute_params_or_empty(
         db,
@@ -1040,7 +1171,13 @@ fn get_node_id_by_symbol_id(
 
 fn str_val(row: &[ExecValue], idx: usize) -> String {
     row.get(idx)
-        .and_then(|v| if let ExecValue::String(s) = v { Some(s.clone()) } else { None })
+        .and_then(|v| {
+            if let ExecValue::String(s) = v {
+                Some(s.clone())
+            } else {
+                None
+            }
+        })
         .unwrap_or_default()
 }
 
@@ -1053,7 +1190,13 @@ fn str_val_opt(row: &[ExecValue], idx: usize) -> Option<String> {
 
 fn int_val(row: &[ExecValue], idx: usize) -> i64 {
     row.get(idx)
-        .and_then(|v| if let ExecValue::Int64(n) = v { Some(*n) } else { None })
+        .and_then(|v| {
+            if let ExecValue::Int64(n) = v {
+                Some(*n)
+            } else {
+                None
+            }
+        })
         .unwrap_or(0)
 }
 
@@ -1132,7 +1275,9 @@ pub fn stats(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
                 _ => 0,
             })
             .unwrap_or(0),
-        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => 0,
+        Err(sparrowdb_common::Error::InvalidArgument(ref msg)) if msg.contains("unknown label") => {
+            0
+        }
         Err(e) => {
             return Err(mcp_error(
                 -32603,
@@ -1254,10 +1399,14 @@ pub fn stats(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
 // ── export_json_ld ────────────────────────────────────────────────────────────
 
 pub fn tool_export_json_ld(db: &GraphDb, _params: Option<Value>) -> Result<Value, Value> {
-    let value = sparrowdb_ontology_core::export_json_ld(db)
-        .map_err(|e| so_error_to_mcp(&e))?;
-    let json_str = serde_json::to_string_pretty(&value)
-        .map_err(|e| mcp_error(-32603, "serialization_error", json!({"detail": e.to_string()})))?;
+    let value = sparrowdb_ontology_core::export_json_ld(db).map_err(|e| so_error_to_mcp(&e))?;
+    let json_str = serde_json::to_string_pretty(&value).map_err(|e| {
+        mcp_error(
+            -32603,
+            "serialization_error",
+            json!({"detail": e.to_string()}),
+        )
+    })?;
     Ok(json!({
         "content": [{"type": "text", "text": json_str}]
     }))
@@ -1268,15 +1417,18 @@ pub fn tool_export_json_ld(db: &GraphDb, _params: Option<Value>) -> Result<Value
 pub fn tool_import_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
     let params = params.unwrap_or(json!({}));
 
-    let ttl = params.get("turtle")
+    let ttl = params
+        .get("turtle")
         .and_then(|v| v.as_str())
         .ok_or_else(|| mcp_error(-32602, "turtle parameter required", json!({})))?;
 
-    let base_iri = params.get("base_iri")
+    let base_iri = params
+        .get("base_iri")
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    let strategy_str = params.get("strategy")
+    let strategy_str = params
+        .get("strategy")
         .and_then(|v| v.as_str())
         .unwrap_or("unconstrained");
 
@@ -1286,10 +1438,13 @@ pub fn tool_import_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, 
         DomainRangeStrategy::Unconstrained
     };
 
-    let opts = ImportOptions { base_iri, domain_range_strategy };
+    let opts = ImportOptions {
+        base_iri,
+        domain_range_strategy,
+    };
 
-    let summary = sparrowdb_ontology_core::import_turtle(db, ttl, opts)
-        .map_err(|e| so_error_to_mcp(&e))?;
+    let summary =
+        sparrowdb_ontology_core::import_turtle(db, ttl, opts).map_err(|e| so_error_to_mcp(&e))?;
 
     let mut result_text = format!(
         "Import complete:\n  Classes:    {}\n  Relations:  {}\n  Subclasses: {}\n  Aliases:    {}",
