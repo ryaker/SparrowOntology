@@ -309,7 +309,7 @@ fn extract_result(result: &Value) -> Value {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-fn cmd_init(db_path: &PathBuf, blank: bool, force: bool) -> Result<(), String> {
+fn cmd_init(db_path: &Path, blank: bool, force: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
     let starter = if blank {
         Some(StarterKind::Blank)
@@ -331,7 +331,7 @@ fn cmd_init(db_path: &PathBuf, blank: bool, force: bool) -> Result<(), String> {
     }
 }
 
-fn cmd_show(db_path: &PathBuf, full: bool, as_json: bool) -> Result<(), String> {
+fn cmd_show(db_path: &Path, full: bool, as_json: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
     let result =
         handle_tool_call(&db, "get_ontology", Some(json!({}))).map_err(|e| render_error(&e))?;
@@ -384,7 +384,7 @@ fn cmd_show(db_path: &PathBuf, full: bool, as_json: bool) -> Result<(), String> 
 }
 
 fn cmd_define_class(
-    db_path: &PathBuf,
+    db_path: &Path,
     name: &str,
     desc: Option<&str>,
     iri: Option<&str>,
@@ -406,7 +406,7 @@ fn cmd_define_class(
 }
 
 fn cmd_define_relation(
-    db_path: &PathBuf,
+    db_path: &Path,
     name: &str,
     from: &str,
     to: &str,
@@ -430,7 +430,7 @@ fn cmd_define_relation(
 }
 
 fn cmd_add_property(
-    db_path: &PathBuf,
+    db_path: &Path,
     owner_prop: &str,
     prop_type: &str,
     required: bool,
@@ -464,7 +464,7 @@ fn cmd_add_property(
     Ok(())
 }
 
-fn cmd_add_alias(db_path: &PathBuf, alias: &str, kind: &str, target: &str) -> Result<(), String> {
+fn cmd_add_alias(db_path: &Path, alias: &str, kind: &str, target: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"alias_name": alias, "target": target, "kind": kind});
     let result = handle_tool_call(&db, "add_alias", Some(params)).map_err(|e| render_error(&e))?;
@@ -478,7 +478,7 @@ fn cmd_add_alias(db_path: &PathBuf, alias: &str, kind: &str, target: &str) -> Re
     Ok(())
 }
 
-fn cmd_add_subclass(db_path: &PathBuf, child: &str, parent: &str) -> Result<(), String> {
+fn cmd_add_subclass(db_path: &Path, child: &str, parent: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"child": child, "parent": parent});
     let result =
@@ -491,7 +491,7 @@ fn cmd_add_subclass(db_path: &PathBuf, child: &str, parent: &str) -> Result<(), 
     Ok(())
 }
 
-fn cmd_add_subproperty(db_path: &PathBuf, child: &str, parent: &str) -> Result<(), String> {
+fn cmd_add_subproperty(db_path: &Path, child: &str, parent: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"child": child, "parent": parent});
     let result =
@@ -504,7 +504,7 @@ fn cmd_add_subproperty(db_path: &PathBuf, child: &str, parent: &str) -> Result<(
     Ok(())
 }
 
-fn cmd_validate(db_path: &PathBuf, ontology_only: bool) -> Result<(), String> {
+fn cmd_validate(db_path: &Path, ontology_only: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
     let scope = if ontology_only {
         "ontology"
@@ -533,7 +533,7 @@ fn cmd_validate(db_path: &PathBuf, ontology_only: bool) -> Result<(), String> {
     Err("Validation failed".to_string())
 }
 
-fn cmd_resolve(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> {
+fn cmd_resolve(db_path: &Path, name: &str, kind: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"name": name, "kind": kind});
     let result =
@@ -550,7 +550,7 @@ fn cmd_resolve(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> 
     Ok(())
 }
 
-fn cmd_create_entity(db_path: &PathBuf, label: &str, props_json: &str) -> Result<(), String> {
+fn cmd_create_entity(db_path: &Path, label: &str, props_json: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let properties: Value = serde_json::from_str(props_json)
         .map_err(|e| format!("Error: invalid JSON for --props: {e}"))?;
@@ -568,7 +568,7 @@ fn cmd_create_entity(db_path: &PathBuf, label: &str, props_json: &str) -> Result
 }
 
 fn cmd_create_relationship(
-    db_path: &PathBuf,
+    db_path: &Path,
     from: &str,
     rel_type: &str,
     to: &str,
@@ -586,7 +586,7 @@ fn cmd_create_relationship(
     Ok(())
 }
 
-fn cmd_explain(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> {
+fn cmd_explain(db_path: &Path, name: &str, kind: &str) -> Result<(), String> {
     let db = open_db(db_path)?;
     let params = json!({"name": name, "kind": kind});
     let result =
@@ -601,9 +601,9 @@ fn cmd_explain(db_path: &PathBuf, name: &str, kind: &str) -> Result<(), String> 
 }
 
 fn cmd_import(
-    db_path: &PathBuf,
-    file_path: &PathBuf,
-    template_path: &PathBuf,
+    db_path: &Path,
+    file_path: &Path,
+    template_path: &Path,
     dry_run: bool,
     skip_errors: bool,
 ) -> Result<(), String> {
@@ -708,11 +708,7 @@ fn cmd_import(
     Ok(())
 }
 
-fn cmd_export_json_ld(
-    db_path: &PathBuf,
-    output: Option<&std::path::Path>,
-    pretty: bool,
-) -> Result<(), String> {
+fn cmd_export_json_ld(db_path: &Path, output: Option<&Path>, pretty: bool) -> Result<(), String> {
     let db = open_db(db_path)?;
     let value = export_json_ld(&db).map_err(|e| format!("Error: {e}"))?;
     let json_str = if pretty {
@@ -727,7 +723,7 @@ fn cmd_export_json_ld(
     Ok(())
 }
 
-fn cmd_stats(db_path: &PathBuf) -> Result<(), String> {
+fn cmd_stats(db_path: &Path) -> Result<(), String> {
     let db = open_db(db_path)?;
     let result =
         handle_tool_call(&db, "start_here", Some(json!({}))).map_err(|e| render_error(&e))?;
@@ -749,8 +745,8 @@ fn cmd_stats(db_path: &PathBuf) -> Result<(), String> {
 }
 
 fn cmd_import_turtle(
-    db_path: &PathBuf,
-    file: &PathBuf,
+    db_path: &Path,
+    file: &Path,
     base_iri: Option<String>,
     strategy: &str,
 ) -> Result<(), String> {

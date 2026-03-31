@@ -45,9 +45,8 @@ fn health_on_initialized_db_returns_ok() {
         "sparrow-ontology-mcp",
         "service name should be 'sparrow-ontology-mcp', got: {result}"
     );
-    assert_eq!(
+    assert!(
         result["db_connected"].as_bool().unwrap_or(false),
-        true,
         "db_connected should be true, got: {result}"
     );
     let class_count = result["class_count"]
@@ -76,9 +75,8 @@ fn health_on_empty_db_still_reports_connected() {
         "ok",
         "health status should be 'ok' even on empty db, got: {result}"
     );
-    assert_eq!(
+    assert!(
         result["db_connected"].as_bool().unwrap_or(false),
-        true,
         "db_connected should be true even when ontology is not initialized, got: {result}"
     );
     assert_eq!(

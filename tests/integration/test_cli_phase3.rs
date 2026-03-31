@@ -157,9 +157,8 @@ fn cli_validate_clean() {
     let (_dir, db) = initialized_db();
     let result = call(&db, "validate", json!({"scope": "full_graph"}));
 
-    assert_eq!(
+    assert!(
         result["valid"].as_bool().unwrap_or(false),
-        true,
         "freshly initialized DB should be valid, got: {result}"
     );
     let violations = result["violations"]
@@ -183,9 +182,8 @@ fn cli_resolve_alias() {
         "add_alias",
         json!({"alias_name": "EMPLOYED_BY", "target": "WORKS_FOR", "kind": "relation"}),
     );
-    assert_eq!(
+    assert!(
         alias_result["success"].as_bool().unwrap_or(false),
-        true,
         "add_alias should succeed, got: {alias_result}"
     );
 
@@ -200,9 +198,8 @@ fn cli_resolve_alias() {
         "WORKS_FOR",
         "canonical_name should be 'WORKS_FOR', got: {resolve_result}"
     );
-    assert_eq!(
+    assert!(
         resolve_result["was_alias"].as_bool().unwrap_or(false),
-        true,
         "was_alias should be true when resolving an alias"
     );
 }
@@ -219,9 +216,8 @@ fn cli_add_alias() {
         "add_alias",
         json!({"alias_name": "TEST", "target": "Person", "kind": "class"}),
     );
-    assert_eq!(
+    assert!(
         alias_result["success"].as_bool().unwrap_or(false),
-        true,
         "add_alias TEST → Person should succeed, got: {alias_result}"
     );
 
@@ -236,9 +232,8 @@ fn cli_add_alias() {
         "Person",
         "canonical_name should be 'Person', got: {resolve_result}"
     );
-    assert_eq!(
+    assert!(
         resolve_result["was_alias"].as_bool().unwrap_or(false),
-        true,
         "was_alias should be true for 'TEST', got: {resolve_result}"
     );
 }
@@ -254,9 +249,8 @@ fn cli_create_entity_person() {
         "create_entity",
         json!({"label": "Person", "properties": {"name": "Alice"}}),
     );
-    assert_eq!(
+    assert!(
         result["created"].as_bool().unwrap_or(false),
-        true,
         "created should be true, got: {result}"
     );
     assert!(
