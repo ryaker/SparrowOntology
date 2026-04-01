@@ -17,7 +17,7 @@ pub mod validation;
 
 pub use error::SoError;
 pub use hierarchy::{check_no_cycle, expand_subclasses, expand_subproperties};
-pub use init::{init, InitResult};
+pub use init::{add_property, init, InitResult};
 pub use model::*;
 pub use resolution::{escape_cypher_string, list_canonical_names, resolve};
 pub use validation::{is_subclass_of, ValidationContext};

@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::str::FromStr;
 use uuid::Uuid;
 
 use crate::error::SoError;
@@ -51,6 +52,26 @@ impl std::fmt::Display for PropertyType {
             PropertyType::Boolean => write!(f, "Boolean"),
             PropertyType::DateTime => write!(f, "DateTime"),
             PropertyType::Json => write!(f, "Json"),
+        }
+    }
+}
+
+impl FromStr for PropertyType {
+    type Err = crate::error::SoError;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s {
+            "String" | "string" => Ok(PropertyType::String),
+            "Integer" | "integer" | "Int" | "int" => Ok(PropertyType::Integer),
+            "Float" | "float" | "Double" | "double" => Ok(PropertyType::Float),
+            "Boolean" | "boolean" | "Bool" | "bool" => Ok(PropertyType::Boolean),
+            "DateTime" | "datetime" | "Date" | "date" => Ok(PropertyType::DateTime),
+            "Json" | "json" | "JSON" => Ok(PropertyType::Json),
+            other => Err(crate::error::SoError::unknown_symbol(
+                other,
+                "PropertyType",
+                vec!["String", "Integer", "Float", "Boolean", "DateTime", "Json"],
+            )),
         }
     }
 }
@@ -169,6 +190,7 @@ pub struct OntologyProperty {
     pub datatype: PropertyType,
     pub is_required: bool,
     pub description: Option<String>,
+    pub source_iri: Option<String>,
 }
 
 impl OntologyProperty {
@@ -178,6 +200,7 @@ impl OntologyProperty {
         name: impl Into<String>,
         datatype: PropertyType,
         description: Option<impl Into<String>>,
+        source_iri: Option<impl Into<String>>,
     ) -> Self {
         OntologyProperty {
             name: name.into(),
@@ -187,6 +210,7 @@ impl OntologyProperty {
             datatype,
             is_required: true,
             description: description.map(|d| d.into()),
+            source_iri: source_iri.map(|s| s.into()),
         }
     }
 
@@ -196,6 +220,7 @@ impl OntologyProperty {
         name: impl Into<String>,
         datatype: PropertyType,
         description: Option<impl Into<String>>,
+        source_iri: Option<impl Into<String>>,
     ) -> Self {
         OntologyProperty {
             name: name.into(),
@@ -205,6 +230,7 @@ impl OntologyProperty {
             datatype,
             is_required: false,
             description: description.map(|d| d.into()),
+            source_iri: source_iri.map(|s| s.into()),
         }
     }
 }
@@ -426,6 +452,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Full name or primary identifier"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Person",
@@ -433,6 +460,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "email",
             PropertyType::String,
             Some("Primary email address"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Person",
@@ -440,6 +468,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "role_title",
             PropertyType::String,
             Some("Current job title or role"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Person",
@@ -447,6 +476,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "bio",
             PropertyType::String,
             Some("Biography or description"),
+            None::<String>,
         ),
         // Organization properties
         OntologyProperty::required(
@@ -455,6 +485,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Organization name"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Organization",
@@ -462,6 +493,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "description",
             PropertyType::String,
             Some("Organization description and mission"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Organization",
@@ -469,6 +501,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "founded_at",
             PropertyType::DateTime,
             Some("When the organization was founded"),
+            None::<String>,
         ),
         // Project properties
         OntologyProperty::required(
@@ -477,6 +510,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Project name"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Project",
@@ -484,6 +518,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "description",
             PropertyType::String,
             Some("Project description and goals"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Project",
@@ -491,6 +526,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "status",
             PropertyType::String,
             Some("Project status (active, paused, completed)"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Project",
@@ -498,6 +534,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "start_date",
             PropertyType::DateTime,
             Some("Project start date"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Project",
@@ -505,6 +542,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "target_date",
             PropertyType::DateTime,
             Some("Project target completion date"),
+            None::<String>,
         ),
         // Task properties
         OntologyProperty::required(
@@ -513,6 +551,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Task name or title"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Task",
@@ -520,6 +559,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "description",
             PropertyType::String,
             Some("Task description and details"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Task",
@@ -527,6 +567,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "status",
             PropertyType::String,
             Some("Task status (open, in_progress, done)"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Task",
@@ -534,6 +575,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "priority",
             PropertyType::String,
             Some("Task priority (low, normal, high)"),
+            None::<String>,
         ),
         // Role properties
         OntologyProperty::required(
@@ -542,6 +584,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Role name"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Role",
@@ -549,6 +592,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "description",
             PropertyType::String,
             Some("Role responsibilities and scope"),
+            None::<String>,
         ),
         // Event properties
         OntologyProperty::required(
@@ -557,6 +601,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Event name"),
+            None::<String>,
         ),
         OntologyProperty::optional(
             "Event",
@@ -564,6 +609,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "date",
             PropertyType::DateTime,
             Some("Event date and time"),
+            None::<String>,
         ),
         // Decision and Policy properties (inheriting naming pattern)
         OntologyProperty::required(
@@ -572,6 +618,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Decision description"),
+            None::<String>,
         ),
         OntologyProperty::required(
             "Policy",
@@ -579,6 +626,7 @@ pub fn canonical_world_model_properties() -> Vec<OntologyProperty> {
             "name",
             PropertyType::String,
             Some("Policy name"),
+            None::<String>,
         ),
     ]
 }

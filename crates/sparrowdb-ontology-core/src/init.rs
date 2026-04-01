@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::str::FromStr;
 
 use sparrowdb::GraphDb;
 
@@ -188,14 +189,22 @@ fn seed_property(db: &GraphDb, property: &OntologyProperty) -> Result<(), SoErro
         String::new()
     };
 
+    let source_iri_clause = if let Some(iri) = &property.source_iri {
+        let escaped_iri = escape_cypher_string(iri);
+        format!(", source_iri: '{}'", escaped_iri)
+    } else {
+        String::new()
+    };
+
     let create_query = format!(
-        "CREATE (p:{} {{name: '{}', symbol_id: '{}', datatype: '{}', is_required: {}, status: 'Active'{}}})",
+        "CREATE (p:{} {{name: '{}', symbol_id: '{}', datatype: '{}', is_required: {}, status: 'Active'{}{}}})",
         PROPERTY_LABEL,
         escaped_name,
         property.symbol_id,
         datatype_str,
         if property.is_required { "true" } else { "false" },
-        description_clause
+        description_clause,
+        source_iri_clause
     );
 
     db.execute(&create_query).map_err(|e| SoError::Storage {
@@ -220,6 +229,30 @@ fn seed_property(db: &GraphDb, property: &OntologyProperty) -> Result<(), SoErro
     })?;
 
     Ok(())
+}
+
+/// Add a new `__SO_Property` to an existing owner class or relation.
+///
+/// This allows callers (e.g. a Turtle importer) to persist properties discovered
+/// from external ontologies without calling `init` again.
+pub fn add_property(
+    db: &GraphDb,
+    owner: &str,
+    owner_kind: OwnerKind,
+    prop_name: &str,
+    datatype_str: &str,
+    required: bool,
+    description: Option<&str>,
+    source_iri: Option<&str>,
+) -> Result<OntologyProperty, SoError> {
+    let datatype = PropertyType::from_str(datatype_str)?;
+    let prop = if required {
+        OntologyProperty::required(owner, owner_kind, prop_name, datatype, description, source_iri)
+    } else {
+        OntologyProperty::optional(owner, owner_kind, prop_name, datatype, description, source_iri)
+    };
+    seed_property(db, &prop)?;
+    Ok(prop)
 }
 
 #[cfg(test)]
