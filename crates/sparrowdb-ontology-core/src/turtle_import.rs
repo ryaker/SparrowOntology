@@ -29,6 +29,7 @@ use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::SoError;
 use crate::init::{add_alias, add_property, define_subclass};
+use crate::resolution::resolve;
 use crate::model::{AliasKind, PropertyType, SymbolStatus};
 use crate::namespace::{CLASS_LABEL, DOMAIN_REL, RANGE_REL, RELATION_LABEL};
 use crate::snapshot::export_schema;
@@ -308,6 +309,19 @@ pub fn import_turtle(
     let mut skipped_no_domain_properties: Vec<String> = Vec::new();
     let mut dropped_property_comments: Vec<(String, String)> = Vec::new();
 
+    // Pre-build (owner_name, prop_name) → PropertyType map for type-drift checks on
+    // DuplicateProperty.  Built once here to avoid re-querying the schema on every
+    // duplicate hit.  Storage failures are fatal and propagated immediately.
+    let existing_props: HashMap<(String, String), PropertyType> = if data_prop_iris.is_empty() {
+        HashMap::new()
+    } else {
+        export_schema(db)?
+            .properties
+            .into_iter()
+            .map(|p| ((p.owner_name, p.name), p.datatype))
+            .collect()
+    };
+
     // 4a. Import classes
     for iri in &class_iris {
         let name = iri_to_name
@@ -386,7 +400,18 @@ pub fn import_turtle(
             .get(iri)
             .map(|v| {
                 v.iter()
-                    .filter_map(|d_iri| iri_to_name.get(d_iri).cloned())
+                    .filter_map(|d_iri| {
+                        // Prefer name from the current import fragment; fall back to
+                        // resolving the local name against the DB so that DatatypeProperty
+                        // declarations that reference a class already in the DB (but not
+                        // re-typed in this Turtle) are not incorrectly skipped.
+                        iri_to_name.get(d_iri).cloned().or_else(|| {
+                            let candidate = local_name(d_iri);
+                            resolve(db, &candidate, AliasKind::Class)
+                                .ok()
+                                .map(|_| candidate)
+                        })
+                    })
                     .collect()
             })
             .unwrap_or_default();
@@ -397,10 +422,17 @@ pub fn import_turtle(
             continue;
         }
 
-        // Resolve XSD range → Sparrow property type
+        // Resolve XSD range → Sparrow property type.
+        // Prefer the first XSD-namespace range IRI; fall back to the first range of
+        // any kind so non-XSD custom ranges still produce "string" rather than being
+        // silently skipped when an XSD range appears later in the list.
         let type_str = ranges
             .get(iri)
-            .and_then(|v| v.first())
+            .and_then(|v| {
+                v.iter()
+                    .find(|r| r.starts_with("http://www.w3.org/2001/XMLSchema#"))
+                    .or_else(|| v.first())
+            })
             .map(|xsd_iri| xsd_to_type_str(xsd_iri))
             .unwrap_or("string");
 
@@ -417,21 +449,15 @@ pub fn import_turtle(
             match add_property(db, owner, &name, type_str, false, false, None) {
                 Ok(_) => properties_imported += 1,
                 Err(SoError::DuplicateProperty { .. }) => {
-                    // Check for type drift: warn if the existing property has a different type
-                    if let Ok(snap) = export_schema(db) {
-                        if let Some(existing) = snap
-                            .properties
-                            .iter()
-                            .find(|p| p.owner_name == *owner && p.name == name)
-                        {
-                            let incoming_type = xsd_str_to_property_type(type_str);
-                            if existing.datatype != incoming_type {
-                                warnings.push(format!(
-                                    "data property '{name}' on '{owner}': type conflict \
-                                     — existing={:?}, incoming={type_str}",
-                                    existing.datatype
-                                ));
-                            }
+                    // Check for type drift using the pre-built cache.
+                    let incoming_type = xsd_str_to_property_type(type_str);
+                    if let Some(existing_type) = existing_props.get(&(owner.clone(), name.clone()))
+                    {
+                        if existing_type != &incoming_type {
+                            warnings.push(format!(
+                                "data property '{name}' on '{owner}': type conflict \
+                                 — existing={existing_type:?}, incoming={type_str}"
+                            ));
                         }
                     }
                 }
