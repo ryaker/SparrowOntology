@@ -770,6 +770,16 @@ fn cmd_import_turtle(
     println!("  Relations:  {}", summary.relations_imported);
     println!("  Subclasses: {}", summary.subclasses_imported);
     println!("  Aliases:    {}", summary.aliases_imported);
+    println!(
+        "  Skipped (no domain): {}",
+        summary.skipped_no_domain_properties.len()
+    );
+    if !summary.dropped_property_comments.is_empty() {
+        println!(
+            "  Comments not stored (no add_property API): {}",
+            summary.dropped_property_comments.len()
+        );
+    }
     if !summary.warnings.is_empty() {
         println!("Warnings ({}):", summary.warnings.len());
         for w in &summary.warnings {

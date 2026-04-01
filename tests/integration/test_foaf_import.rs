@@ -148,11 +148,18 @@ fn foaf_real_happy_path_counts() {
         summary.classes_imported
     );
 
-    // 5 object properties + 3 datatype properties = 8 relations
+    // 5 owl:ObjectProperty → 5 relations; 3 owl:DatatypeProperty → add_property
     assert_eq!(
-        summary.relations_imported, 8,
-        "expected 8 relations (knows, member, depiction, account, currentProject, name, mbox, homepage), got {}",
+        summary.relations_imported, 5,
+        "expected 5 relations (knows, member, depiction, account, currentProject), got {}",
         summary.relations_imported
+    );
+
+    // mbox has domain Agent → imported as property; name + homepage have no domain → skipped
+    assert_eq!(
+        summary.properties_imported, 1,
+        "expected 1 data property (mbox on Agent), got {}",
+        summary.properties_imported
     );
 
     // Person→Agent, Organization→Agent, Group→Agent, Image→Document = 4
@@ -162,16 +169,35 @@ fn foaf_real_happy_path_counts() {
         summary.subclasses_imported
     );
 
-    // Filter out the blank-node skip warning if present — no real warnings expected
-    let real_warnings: Vec<_> = summary
+    // name and homepage have no rdfs:domain → 2 warnings; blank-node warning also possible
+    let domain_warnings: Vec<_> = summary
         .warnings
         .iter()
-        .filter(|w| !w.contains("blank-node"))
+        .filter(|w| w.contains("no rdfs:domain"))
         .collect();
+    assert_eq!(
+        domain_warnings.len(),
+        2,
+        "expected 2 no-domain warnings (name, homepage), got: {:?}",
+        domain_warnings
+    );
+    assert_eq!(
+        summary.skipped_no_domain_properties.len(),
+        2,
+        "expected 2 skipped_no_domain_properties, got: {:?}",
+        summary.skipped_no_domain_properties
+    );
     assert!(
-        real_warnings.is_empty(),
-        "expected no real warnings, got: {:?}",
-        real_warnings
+        summary
+            .skipped_no_domain_properties
+            .contains(&"name".to_string()),
+        "skipped_no_domain_properties must contain 'name'"
+    );
+    assert!(
+        summary
+            .skipped_no_domain_properties
+            .contains(&"homepage".to_string()),
+        "skipped_no_domain_properties must contain 'homepage'"
     );
 }
 
@@ -205,8 +231,8 @@ fn foaf_jsonld_round_trip() {
         );
     }
 
-    // Verify core relations are present
-    for rel_label in &["knows", "member", "name", "mbox", "account"] {
+    // Verify core object-property relations are present (DatatypeProperty → add_property, not @graph)
+    for rel_label in &["knows", "member", "account"] {
         assert!(
             find_node_by_label(graph, rel_label).is_some(),
             "relation '{}' must be present in JSON-LD export",
@@ -281,8 +307,8 @@ fn foaf_idempotent_reimport() {
     let s1 = import_turtle(&db, FOAF_REAL_TTL, ImportOptions::default()).unwrap();
     assert_eq!(s1.classes_imported, 8, "first import: expected 8 classes");
     assert_eq!(
-        s1.relations_imported, 8,
-        "first import: expected 8 relations"
+        s1.relations_imported, 5,
+        "first import: expected 5 object-property relations"
     );
 
     // Second import — must succeed without error
@@ -378,7 +404,7 @@ fn foaf_first_only_strategy() {
 
     // Same counts — strategy only affects multi-domain handling
     assert_eq!(summary.classes_imported, 8);
-    assert_eq!(summary.relations_imported, 8);
+    assert_eq!(summary.relations_imported, 5);
 
     // 'knows' should still have domain/range with FirstOnly
     let doc = export_json_ld(&db).unwrap();

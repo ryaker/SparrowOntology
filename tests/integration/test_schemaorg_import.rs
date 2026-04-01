@@ -10,7 +10,7 @@
 
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_core::{
-    export_json_ld, init,
+    export_json_ld, export_schema, init,
     turtle_import::{import_turtle, DomainRangeStrategy, ImportOptions},
     StarterKind,
 };
@@ -128,10 +128,17 @@ fn schemaorg_subset_import_counts() {
         "expected 4 classes (Thing, Person, Organization, LocalBusiness), got {}",
         summary.classes_imported
     );
+    // 3 owl:ObjectProperty → relations; 2 owl:DatatypeProperty → add_property
     assert_eq!(
-        summary.relations_imported, 5,
-        "expected 5 relations (name, worksFor, email, member, parentOrganization), got {}",
+        summary.relations_imported, 3,
+        "expected 3 relations (worksFor, member, parentOrganization), got {}",
         summary.relations_imported
+    );
+    // name → Thing (1); email → Person + Organization (2) = 3 properties
+    assert_eq!(
+        summary.properties_imported, 3,
+        "expected 3 data properties (name/Thing, email/Person, email/Organization), got {}",
+        summary.properties_imported
     );
     assert_eq!(
         summary.subclasses_imported, 3,
@@ -209,14 +216,14 @@ fn single_domain_includes_resolved() {
     };
     import_turtle(&db, SCHEMAORG_SUBSET_TTL, opts).unwrap();
 
-    let doc = export_json_ld(&db).unwrap();
-    let graph = get_graph(&doc);
-
-    // schema:name has single domainIncludes (Thing) → domain should be set
-    let name_node = find_node_by_label(graph, "name").expect("'name' relation not found");
+    // schema:name is owl:DatatypeProperty with single domainIncludes (Thing)
+    // → imported as add_property on Thing, not as a relation in @graph
+    let snap = export_schema(&db).unwrap();
     assert!(
-        name_node.get("rdfs:domain").is_some(),
-        "rdfs:domain must be present for 'name' (single domainIncludes → Thing)"
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Thing" && p.name == "name"),
+        "'name' property must be on Thing class (owl:DatatypeProperty → add_property)"
     );
 }
 
@@ -233,14 +240,20 @@ fn multi_domain_includes_drops_domain_unconstrained() {
     };
     import_turtle(&db, SCHEMAORG_SUBSET_TTL, opts).unwrap();
 
-    let doc = export_json_ld(&db).unwrap();
-    let graph = get_graph(&doc);
-
-    // schema:email has 2 domainIncludes (Person, Organization) → domain absent
-    let email_node = find_node_by_label(graph, "email").expect("'email' relation not found");
+    // schema:email is owl:DatatypeProperty with 2 domainIncludes (Person, Organization)
+    // → imported as add_property on both classes (not a relation)
+    let snap = export_schema(&db).unwrap();
     assert!(
-        email_node.get("rdfs:domain").is_none(),
-        "rdfs:domain must be absent for 'email' (multiple domainIncludes with Unconstrained)"
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Person" && p.name == "email"),
+        "'email' property must be on Person class"
+    );
+    assert!(
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Organization" && p.name == "email"),
+        "'email' property must be on Organization class"
     );
 }
 
@@ -346,14 +359,20 @@ fn first_only_strategy_keeps_domain() {
     };
     import_turtle(&db, SCHEMAORG_SUBSET_TTL, opts).unwrap();
 
-    let doc = export_json_ld(&db).unwrap();
-    let graph = get_graph(&doc);
-
-    // With FirstOnly, email (multi domainIncludes) should still have a domain
-    let email_node = find_node_by_label(graph, "email").expect("'email' relation not found");
+    // owl:DatatypeProperty → add_property regardless of strategy
+    // email with 2 domainIncludes → property on both Person and Organization
+    let snap = export_schema(&db).unwrap();
     assert!(
-        email_node.get("rdfs:domain").is_some(),
-        "rdfs:domain must be present for 'email' with FirstOnly strategy"
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Person" && p.name == "email"),
+        "'email' must be on Person even with FirstOnly strategy"
+    );
+    assert!(
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Organization" && p.name == "email"),
+        "'email' must be on Organization even with FirstOnly strategy"
     );
 }
 
@@ -373,10 +392,8 @@ fn round_trip_no_data_loss() {
     let doc = export_json_ld(&db).unwrap();
     let graph = get_graph(&doc);
 
-    // Count classes (type = owl:Class or rdfs:Class) and relations
+    // Verify classes survive round-trip
     let class_labels = ["Thing", "Person", "Organization", "LocalBusiness"];
-    let relation_labels = ["name", "worksFor", "email", "member", "parentOrganization"];
-
     for label in &class_labels {
         assert!(
             find_node_by_label(graph, label).is_some(),
@@ -384,12 +401,29 @@ fn round_trip_no_data_loss() {
         );
     }
 
+    // owl:ObjectProperty relations survive in @graph
+    let relation_labels = ["worksFor", "member", "parentOrganization"];
     for label in &relation_labels {
         assert!(
             find_node_by_label(graph, label).is_some(),
             "relation '{label}' missing from JSON-LD round-trip"
         );
     }
+
+    // owl:DatatypeProperty values survive as class properties (not in @graph)
+    let snap = export_schema(&db).unwrap();
+    assert!(
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Thing" && p.name == "name"),
+        "'name' property on Thing missing from round-trip"
+    );
+    assert!(
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Person" && p.name == "email"),
+        "'email' property on Person missing from round-trip"
+    );
 
     // Verify descriptions survived
     let thing = find_node_by_label(graph, "Thing").expect("Thing not found");
