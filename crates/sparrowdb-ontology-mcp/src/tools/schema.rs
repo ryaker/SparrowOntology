@@ -1455,6 +1455,12 @@ pub fn tool_import_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, 
         summary.properties_imported,
         summary.skipped_no_domain_properties.len(),
     );
+    if !summary.dropped_property_comments.is_empty() {
+        result_text.push_str(&format!(
+            "\n  Comments not stored (no add_property API): {}",
+            summary.dropped_property_comments.len()
+        ));
+    }
 
     if !summary.warnings.is_empty() {
         result_text.push_str(&format!("\nWarnings ({}):", summary.warnings.len()));

@@ -92,6 +92,10 @@ pub struct ImportSummary {
     /// Names of `owl:DatatypeProperty` terms that were skipped because they
     /// had no resolvable `rdfs:domain`.
     pub skipped_no_domain_properties: Vec<String>,
+    /// `(property_name, comment)` pairs for `owl:DatatypeProperty` terms whose
+    /// `rdfs:comment` could not be persisted because `add_property` has no
+    /// description parameter.  Callers may surface or store these separately.
+    pub dropped_property_comments: Vec<(String, String)>,
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -302,6 +306,7 @@ pub fn import_turtle(
     let mut aliases_imported: usize = 0;
     let mut properties_imported: usize = 0;
     let mut skipped_no_domain_properties: Vec<String> = Vec::new();
+    let mut dropped_property_comments: Vec<(String, String)> = Vec::new();
 
     // 4a. Import classes
     for iri in &class_iris {
@@ -399,11 +404,13 @@ pub fn import_turtle(
             .map(|xsd_iri| xsd_to_type_str(xsd_iri))
             .unwrap_or("string");
 
-        // rdfs:comment for DatatypeProperty is intentionally not persisted: the
-        // add_property API has no description parameter and the OntologyProperty model
-        // has no description field.  Silently dropping it is correct — the comment is
-        // metadata on the OWL property IRI itself, not on the Sparrow class property.
-        // If add_property ever gains a description field this should be plumbed through.
+        // Carry rdfs:comment into ImportSummary for callers to handle.
+        // add_property has no description parameter today; tracked in issue #39.
+        if let Some(comment) = comments.get(iri) {
+            if !comment.is_empty() {
+                dropped_property_comments.push((name.clone(), comment.clone()));
+            }
+        }
 
         // Import property on each domain class
         for owner in &domain_names {
@@ -470,6 +477,7 @@ pub fn import_turtle(
         properties_imported,
         warnings,
         skipped_no_domain_properties,
+        dropped_property_comments,
     })
 }
 
