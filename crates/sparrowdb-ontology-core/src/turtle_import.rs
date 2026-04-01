@@ -368,7 +368,15 @@ pub fn import_turtle(
             .cloned()
             .unwrap_or_else(|| local_name(iri));
 
-        // Collect all resolvable domain classes (rdfs:domain or schema:domainIncludes)
+        // Collect all resolvable domain classes (rdfs:domain or schema:domainIncludes).
+        //
+        // NOTE: DatatypeProperty intentionally does NOT apply resolve_domain_range / strategy
+        // here.  Unlike ObjectProperty (which maps to a graph edge and can only have one
+        // domain endpoint), a DatatypeProperty maps to add_property which attaches a scalar
+        // field to a class node — it is safe and correct to add the same property to every
+        // declared domain class.  The domain_range_strategy controls edge semantics only.
+        // Tests `multi_domain_includes_drops_domain_unconstrained` and
+        // `first_only_strategy_keeps_domain` both document this fanout behaviour.
         let domain_names: Vec<String> = domains
             .get(iri)
             .map(|v| {
@@ -390,6 +398,12 @@ pub fn import_turtle(
             .and_then(|v| v.first())
             .map(|xsd_iri| xsd_to_type_str(xsd_iri))
             .unwrap_or("string");
+
+        // rdfs:comment for DatatypeProperty is intentionally not persisted: the
+        // add_property API has no description parameter and the OntologyProperty model
+        // has no description field.  Silently dropping it is correct — the comment is
+        // metadata on the OWL property IRI itself, not on the Sparrow class property.
+        // If add_property ever gains a description field this should be plumbed through.
 
         // Import property on each domain class
         for owner in &domain_names {
@@ -476,27 +490,25 @@ fn xsd_str_to_property_type(s: &str) -> PropertyType {
 }
 
 /// Map an XSD datatype IRI to a Sparrow property type string.
+///
+/// Only IRIs whose namespace is exactly `http://www.w3.org/2001/XMLSchema#` are
+/// considered XSD; anything else falls through to `"string"` to avoid false
+/// matches on custom IRIs that happen to share a suffix (e.g. `example.com/ns#int`).
 fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
-    match xsd_iri {
-        i if i.ends_with("#integer")
-            || i.ends_with("#int")
-            || i.ends_with("#long")
-            || i.ends_with("#short")
-            || i.ends_with("#byte")
-            || i.ends_with("#nonNegativeInteger")
-            || i.ends_with("#positiveInteger")
-            || i.ends_with("#negativeInteger")
-            || i.ends_with("#nonPositiveInteger")
-            || i.ends_with("#unsignedLong")
-            || i.ends_with("#unsignedInt") =>
-        {
-            "int64"
-        }
-        i if i.ends_with("#decimal") || i.ends_with("#float") || i.ends_with("#double") => {
-            "float64"
-        }
-        i if i.ends_with("#boolean") => "bool",
-        i if i.ends_with("#date") || i.ends_with("#dateTime") || i.ends_with("#time") => "date",
+    const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema#";
+    let local = match xsd_iri.strip_prefix(XSD_NS) {
+        Some(l) => l,
+        None => return "string",
+    };
+    match local {
+        "integer" | "int" | "long" | "short" | "byte" | "nonNegativeInteger"
+        | "positiveInteger" | "negativeInteger" | "nonPositiveInteger" | "unsignedLong"
+        | "unsignedInt" | "unsignedShort" | "unsignedByte" => "int64",
+        "decimal" | "float" | "double" => "float64",
+        "boolean" => "bool",
+        // xsd:date and xsd:dateTime carry a calendar date component → "date".
+        // xsd:time (HH:MM:SS only, no date) has no Sparrow Date equivalent → "string".
+        "date" | "dateTime" => "date",
         _ => "string",
     }
 }
