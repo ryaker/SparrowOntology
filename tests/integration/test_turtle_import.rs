@@ -646,4 +646,122 @@ ex:orphan a owl:DatatypeProperty ;
         "warning must mention missing domain, got: {}",
         summary.warnings[0]
     );
+    assert_eq!(
+        summary.skipped_no_domain_properties.len(),
+        1,
+        "expected 1 skipped_no_domain_properties entry"
+    );
+    assert!(
+        summary
+            .skipped_no_domain_properties
+            .contains(&"orphan".to_string()),
+        "skipped_no_domain_properties must contain 'orphan'"
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 16 — DatatypeProperty type conflict on re-import emits warning (issue #38)
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn datatype_property_type_conflict_warns_on_reimport() {
+    let (_dir, db) = blank_db();
+
+    // First import: age is xsd:integer → int64
+    let ttl_v1 = r#"
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex:   <https://example.org/> .
+
+ex:Person a owl:Class ;
+    rdfs:label "Person" .
+
+ex:age a owl:DatatypeProperty ;
+    rdfs:label "age" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:integer .
+"#;
+
+    let s1 = import_turtle(&db, ttl_v1, ImportOptions::default()).unwrap();
+    assert_eq!(
+        s1.properties_imported, 1,
+        "first import: expected 1 property"
+    );
+    assert!(
+        s1.warnings.is_empty(),
+        "first import must have no warnings, got: {:?}",
+        s1.warnings
+    );
+
+    // Second import: age is xsd:string → string (type change!)
+    let ttl_v2 = r#"
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex:   <https://example.org/> .
+
+ex:Person a owl:Class ;
+    rdfs:label "Person" .
+
+ex:age a owl:DatatypeProperty ;
+    rdfs:label "age" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:string .
+"#;
+
+    let s2 = import_turtle(&db, ttl_v2, ImportOptions::default()).unwrap();
+
+    // The property already exists so properties_imported stays 0 for the second pass
+    assert_eq!(
+        s2.properties_imported, 0,
+        "second import: duplicate property must not increment properties_imported"
+    );
+
+    // A type-conflict warning must be emitted
+    assert!(
+        !s2.warnings.is_empty(),
+        "second import: expected a type-conflict warning, got none"
+    );
+    assert!(
+        s2.warnings.iter().any(|w| w.contains("type conflict")),
+        "warning must contain 'type conflict', got: {:?}",
+        s2.warnings
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 17 — DatatypeProperty same-type re-import: no type conflict warning
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn datatype_property_same_type_reimport_no_warning() {
+    let (_dir, db) = blank_db();
+
+    // Import once
+    let s1 = import_turtle(&db, DATATYPE_TTL, ImportOptions::default()).unwrap();
+    assert_eq!(
+        s1.properties_imported, 5,
+        "first import: expected 5 properties"
+    );
+    assert!(
+        s1.warnings.is_empty(),
+        "first import must have no warnings, got: {:?}",
+        s1.warnings
+    );
+
+    // Re-import the identical Turtle — no type conflict, no warnings
+    let s2 = import_turtle(&db, DATATYPE_TTL, ImportOptions::default()).unwrap();
+
+    let type_conflict_warnings: Vec<&String> = s2
+        .warnings
+        .iter()
+        .filter(|w| w.contains("type conflict"))
+        .collect();
+
+    assert!(
+        type_conflict_warnings.is_empty(),
+        "same-type re-import must not emit type conflict warnings, got: {:?}",
+        type_conflict_warnings
+    );
 }

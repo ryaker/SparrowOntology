@@ -29,8 +29,9 @@ use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::SoError;
 use crate::init::{add_alias, add_property, define_subclass};
-use crate::model::{AliasKind, SymbolStatus};
+use crate::model::{AliasKind, PropertyType, SymbolStatus};
 use crate::namespace::{CLASS_LABEL, DOMAIN_REL, RANGE_REL, RELATION_LABEL};
+use crate::snapshot::export_schema;
 
 // ── IRI constants ─────────────────────────────────────────────────────────────
 
@@ -88,6 +89,9 @@ pub struct ImportSummary {
     pub aliases_imported: usize,
     pub properties_imported: usize,
     pub warnings: Vec<String>,
+    /// Names of `owl:DatatypeProperty` terms that were skipped because they
+    /// had no resolvable `rdfs:domain`.
+    pub skipped_no_domain_properties: Vec<String>,
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -297,6 +301,7 @@ pub fn import_turtle(
     let mut subclasses_imported: usize = 0;
     let mut aliases_imported: usize = 0;
     let mut properties_imported: usize = 0;
+    let mut skipped_no_domain_properties: Vec<String> = Vec::new();
 
     // 4a. Import classes
     for iri in &class_iris {
@@ -375,6 +380,7 @@ pub fn import_turtle(
 
         if domain_names.is_empty() {
             warnings.push(format!("data property '{name}': no rdfs:domain — skipped"));
+            skipped_no_domain_properties.push(name.clone());
             continue;
         }
 
@@ -390,7 +396,23 @@ pub fn import_turtle(
             match add_property(db, owner, &name, type_str, false, false, None) {
                 Ok(_) => properties_imported += 1,
                 Err(SoError::DuplicateProperty { .. }) => {
-                    // Idempotent — already declared
+                    // Check for type drift: warn if the existing property has a different type
+                    if let Ok(snap) = export_schema(db) {
+                        if let Some(existing) = snap
+                            .properties
+                            .iter()
+                            .find(|p| p.owner_name == *owner && p.name == name)
+                        {
+                            let incoming_type = xsd_str_to_property_type(type_str);
+                            if existing.datatype != incoming_type {
+                                warnings.push(format!(
+                                    "data property '{name}' on '{owner}': type conflict \
+                                     — existing={:?}, incoming={type_str}",
+                                    existing.datatype
+                                ));
+                            }
+                        }
+                    }
                 }
                 Err(e) => warnings.push(format!("data property '{name}' on '{owner}': {e}")),
             }
@@ -433,10 +455,25 @@ pub fn import_turtle(
         aliases_imported,
         properties_imported,
         warnings,
+        skipped_no_domain_properties,
     })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Convert a Sparrow type string (as returned by `xsd_to_type_str`) to a `PropertyType` variant.
+///
+/// Mirrors the mapping in `init::parse_property_type_str`.
+fn xsd_str_to_property_type(s: &str) -> PropertyType {
+    match s {
+        "int64" => PropertyType::Int64,
+        "float64" => PropertyType::Float64,
+        "bool" => PropertyType::Bool,
+        "date" => PropertyType::Date,
+        "variant" => PropertyType::Variant,
+        _ => PropertyType::String,
+    }
+}
 
 /// Map an XSD datatype IRI to a Sparrow property type string.
 fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
