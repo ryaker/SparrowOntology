@@ -93,10 +93,6 @@ pub struct ImportSummary {
     /// Names of `owl:DatatypeProperty` terms that were skipped because they
     /// had no resolvable `rdfs:domain`.
     pub skipped_no_domain_properties: Vec<String>,
-    /// `(property_name, comment)` pairs for `owl:DatatypeProperty` terms whose
-    /// `rdfs:comment` could not be persisted because `add_property` has no
-    /// description parameter.  Callers may surface or store these separately.
-    pub dropped_property_comments: Vec<(String, String)>,
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -307,7 +303,6 @@ pub fn import_turtle(
     let mut aliases_imported: usize = 0;
     let mut properties_imported: usize = 0;
     let mut skipped_no_domain_properties: Vec<String> = Vec::new();
-    let mut dropped_property_comments: Vec<(String, String)> = Vec::new();
 
     // Pre-build (owner_name, prop_name) → PropertyType map for type-drift checks on
     // DuplicateProperty.  Built once here to avoid re-querying the schema on every
@@ -436,17 +431,25 @@ pub fn import_turtle(
             .map(|xsd_iri| xsd_to_type_str(xsd_iri))
             .unwrap_or("string");
 
-        // Carry rdfs:comment into ImportSummary for callers to handle.
-        // add_property has no description parameter today; tracked in issue #39.
-        if let Some(comment) = comments.get(iri) {
-            if !comment.is_empty() {
-                dropped_property_comments.push((name.clone(), comment.clone()));
-            }
-        }
+        let prop_description = comments
+            .get(iri)
+            .filter(|s| !s.is_empty())
+            .map(String::as_str);
+        let prop_iri = Some(iri.as_str());
 
         // Import property on each domain class
         for owner in &domain_names {
-            match add_property(db, owner, &name, type_str, false, false, None) {
+            match add_property(
+                db,
+                owner,
+                &name,
+                type_str,
+                false,
+                false,
+                None,
+                prop_description,
+                prop_iri,
+            ) {
                 Ok(_) => properties_imported += 1,
                 Err(SoError::DuplicateProperty { .. }) => {
                     // Check for type drift using the pre-built cache.
@@ -503,7 +506,6 @@ pub fn import_turtle(
         properties_imported,
         warnings,
         skipped_no_domain_properties,
-        dropped_property_comments,
     })
 }
 

@@ -975,8 +975,18 @@ pub fn tool_add_property(db: &GraphDb, params: Option<Value>) -> Result<Value, V
         ));
     }
 
-    let prop = add_property(db, owner, name, datatype, required, unique, allowed_values)
-        .map_err(|e| mcp_error(-32602, "add_property failed", so_error_to_mcp(&e)))?;
+    let prop = add_property(
+        db,
+        owner,
+        name,
+        datatype,
+        required,
+        unique,
+        allowed_values,
+        None,
+        None,
+    )
+    .map_err(|e| mcp_error(-32602, "add_property failed", so_error_to_mcp(&e)))?;
 
     Ok(json!({
         "content": [{
@@ -1455,13 +1465,6 @@ pub fn tool_import_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, 
         summary.properties_imported,
         summary.skipped_no_domain_properties.len(),
     );
-    if !summary.dropped_property_comments.is_empty() {
-        result_text.push_str(&format!(
-            "\n  Comments not stored (no add_property API): {}",
-            summary.dropped_property_comments.len()
-        ));
-    }
-
     if !summary.warnings.is_empty() {
         result_text.push_str(&format!("\nWarnings ({}):", summary.warnings.len()));
         for w in &summary.warnings {

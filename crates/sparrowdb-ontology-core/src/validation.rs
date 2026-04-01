@@ -390,6 +390,8 @@ impl<'a> ValidationContext<'a> {
                 owner_kind: crate::model::OwnerKind::Class,
                 created_at: 0,
                 owner_name: String::new(),
+                description: None,
+                source_iri: None,
             });
         }
         Ok(props)

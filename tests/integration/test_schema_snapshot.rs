@@ -158,9 +158,11 @@ fn snapshot_roundtrip_property_with_unique_and_allowed_values() {
             "medium".to_string(),
             "high".to_string(),
         ]),
+        None,
+        None,
     )
     .unwrap();
-    add_property(&db_a, "Person", "badge_id", "string", false, true, None).unwrap();
+    add_property(&db_a, "Person", "badge_id", "string", false, true, None, None, None).unwrap();
 
     let snap = export_schema(&db_a).unwrap();
     drop(db_a);

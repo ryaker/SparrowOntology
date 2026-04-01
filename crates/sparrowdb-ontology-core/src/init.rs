@@ -443,6 +443,7 @@ pub fn add_alias(
 ///
 /// Returns `SoError::DuplicateProperty` if a property with this name is already
 /// declared on the resolved class.
+#[allow(clippy::too_many_arguments)]
 pub fn add_property(
     db: &GraphDb,
     owner: &str,
@@ -451,6 +452,8 @@ pub fn add_property(
     required: bool,
     unique: bool,
     allowed_values: Option<Vec<String>>,
+    description: Option<&str>,
+    source_iri: Option<&str>,
 ) -> Result<OntologyProperty, SoError> {
     // Guard: reserved key prefix
     if prop_name.starts_with("__so_") || prop_name.starts_with("__SO_") {
@@ -498,21 +501,29 @@ pub fn add_property(
         .map(|v| serde_json::to_string(v).unwrap_or_default())
         .unwrap_or_default();
 
+    let mut node_props = vec![
+        ("symbol_id", sv(&symbol_id)),
+        ("name", sv(prop_name)),
+        ("datatype", sv(datatype_label)),
+        ("required", bv(required)),
+        ("unique", bv(unique)),
+        ("enum_values", sv(&enum_json)),
+        ("owner_symbol_id", sv(&class_sym.symbol_id)),
+        ("owner_kind", sv("class")),
+        ("created_at", iv(now)),
+    ];
+    let desc_val;
+    let iri_val;
+    if let Some(d) = description {
+        desc_val = sv(d);
+        node_props.push(("description", desc_val));
+    }
+    if let Some(i) = source_iri {
+        iri_val = sv(i);
+        node_props.push(("source_iri", iri_val));
+    }
     let mut tx = db.begin_write()?;
-    let prop_node_id = tx.merge_node(
-        PROPERTY_LABEL,
-        props(&[
-            ("symbol_id", sv(&symbol_id)),
-            ("name", sv(prop_name)),
-            ("datatype", sv(datatype_label)),
-            ("required", bv(required)),
-            ("unique", bv(unique)),
-            ("enum_values", sv(&enum_json)),
-            ("owner_symbol_id", sv(&class_sym.symbol_id)),
-            ("owner_kind", sv("class")),
-            ("created_at", iv(now)),
-        ]),
-    )?;
+    let prop_node_id = tx.merge_node(PROPERTY_LABEL, props(&node_props))?;
     tx.commit()?;
 
     // Create HAS_PROPERTY edge: class → property
@@ -547,6 +558,8 @@ pub fn add_property(
         owner_kind: crate::model::OwnerKind::Class,
         created_at: now,
         owner_name: class_sym.canonical_name,
+        description: description.map(str::to_string),
+        source_iri: source_iri.map(str::to_string),
     })
 }
 

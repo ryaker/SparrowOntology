@@ -449,7 +449,7 @@ fn class_with_required_property_includes_so_required_properties() {
     let c = OntologyClass::new("Contract", "A legal agreement");
     seed_class(&db, &c);
 
-    add_property(&db, "Contract", "title", "string", true, false, None).unwrap();
+    add_property(&db, "Contract", "title", "string", true, false, None, None, None).unwrap();
 
     let doc = export_json_ld(&db).unwrap();
     let graph = get_graph(&doc);
