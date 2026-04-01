@@ -307,7 +307,9 @@ pub fn import_turtle(
     // Pre-build (owner_name, prop_name) → PropertyType map for type-drift checks on
     // DuplicateProperty.  Built once here to avoid re-querying the schema on every
     // duplicate hit.  Storage failures are fatal and propagated immediately.
-    let existing_props: HashMap<(String, String), PropertyType> = if data_prop_iris.is_empty() {
+    // Kept mutable so successful same-batch insertions are visible to subsequent
+    // duplicate checks within the same import run.
+    let mut existing_props: HashMap<(String, String), PropertyType> = if data_prop_iris.is_empty() {
         HashMap::new()
     } else {
         export_schema(db)?
@@ -437,6 +439,9 @@ pub fn import_turtle(
             .map(String::as_str);
         let prop_iri = Some(iri.as_str());
 
+        // Resolve incoming type once — used in both the success and duplicate paths.
+        let incoming_type = crate::init::parse_property_type_str(type_str);
+
         // Import property on each domain class
         for owner in &domain_names {
             match add_property(
@@ -450,10 +455,13 @@ pub fn import_turtle(
                 prop_description,
                 prop_iri,
             ) {
-                Ok(_) => properties_imported += 1,
+                Ok(_) => {
+                    properties_imported += 1;
+                    // Update cache so subsequent same-batch duplicates see this insertion.
+                    existing_props.insert((owner.clone(), name.clone()), incoming_type.clone());
+                }
                 Err(SoError::DuplicateProperty { .. }) => {
-                    // Check for type drift using the pre-built cache.
-                    let incoming_type = crate::init::parse_property_type_str(type_str);
+                    // Check for type drift using the cache (pre-import DB state + same-batch inserts).
                     if let Some(existing_type) = existing_props.get(&(owner.clone(), name.clone()))
                     {
                         if existing_type != &incoming_type {
