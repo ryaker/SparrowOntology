@@ -453,7 +453,7 @@ pub fn import_turtle(
                 Ok(_) => properties_imported += 1,
                 Err(SoError::DuplicateProperty { .. }) => {
                     // Check for type drift using the pre-built cache.
-                    let incoming_type = xsd_str_to_property_type(type_str);
+                    let incoming_type = crate::init::parse_property_type_str(type_str);
                     if let Some(existing_type) = existing_props.get(&(owner.clone(), name.clone()))
                     {
                         if existing_type != &incoming_type {
@@ -510,20 +510,6 @@ pub fn import_turtle(
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Convert a Sparrow type string (as returned by `xsd_to_type_str`) to a `PropertyType` variant.
-///
-/// Mirrors the mapping in `init::parse_property_type_str`.
-fn xsd_str_to_property_type(s: &str) -> PropertyType {
-    match s {
-        "int64" => PropertyType::Int64,
-        "float64" => PropertyType::Float64,
-        "bool" => PropertyType::Bool,
-        "date" => PropertyType::Date,
-        "variant" => PropertyType::Variant,
-        _ => PropertyType::String,
-    }
-}
 
 /// Map an XSD datatype IRI to a Sparrow property type string.
 ///

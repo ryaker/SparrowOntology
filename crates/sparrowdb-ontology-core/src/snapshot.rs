@@ -352,22 +352,8 @@ fn export_properties(
         let owner_symbol_id = str_val(&row[6]);
         let owner_kind_str = str_val(&row[7]);
         let created_at = i64_val(&row[8]);
-        let description = row.get(9).and_then(|v| {
-            let s = str_val(v);
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        });
-        let source_iri = row.get(10).and_then(|v| {
-            let s = str_val(v);
-            if s.is_empty() {
-                None
-            } else {
-                Some(s)
-            }
-        });
+        let description = row.get(9).and_then(opt_str_val);
+        let source_iri = row.get(10).and_then(opt_str_val);
         let owner_name = class_name_by_sid
             .get(&owner_symbol_id)
             .cloned()

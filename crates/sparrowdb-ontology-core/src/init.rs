@@ -512,15 +512,11 @@ pub fn add_property(
         ("owner_kind", sv("class")),
         ("created_at", iv(now)),
     ];
-    let desc_val;
-    let iri_val;
     if let Some(d) = description {
-        desc_val = sv(d);
-        node_props.push(("description", desc_val));
+        node_props.push(("description", sv(d)));
     }
     if let Some(i) = source_iri {
-        iri_val = sv(i);
-        node_props.push(("source_iri", iri_val));
+        node_props.push(("source_iri", sv(i)));
     }
     let mut tx = db.begin_write()?;
     let prop_node_id = tx.merge_node(PROPERTY_LABEL, props(&node_props))?;
@@ -563,7 +559,7 @@ pub fn add_property(
     })
 }
 
-fn parse_property_type_str(s: &str) -> PropertyType {
+pub(crate) fn parse_property_type_str(s: &str) -> PropertyType {
     match s {
         "string" => PropertyType::String,
         "int64" => PropertyType::Int64,
