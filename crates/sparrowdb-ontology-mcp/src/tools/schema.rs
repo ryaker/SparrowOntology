@@ -1447,12 +1447,13 @@ pub fn tool_import_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, 
         sparrowdb_ontology_core::import_turtle(db, ttl, opts).map_err(|e| so_error_to_mcp(&e))?;
 
     let mut result_text = format!(
-        "Import complete:\n  Classes:    {}\n  Relations:  {}\n  Subclasses: {}\n  Aliases:    {}\n  Properties: {}",
+        "Import complete:\n  Classes:    {}\n  Relations:  {}\n  Subclasses: {}\n  Aliases:    {}\n  Properties: {}\n  Skipped (no domain): {}",
         summary.classes_imported,
         summary.relations_imported,
         summary.subclasses_imported,
         summary.aliases_imported,
         summary.properties_imported,
+        summary.skipped_no_domain_properties.len(),
     );
 
     if !summary.warnings.is_empty() {

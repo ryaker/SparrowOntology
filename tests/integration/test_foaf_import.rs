@@ -181,6 +181,24 @@ fn foaf_real_happy_path_counts() {
         "expected 2 no-domain warnings (name, homepage), got: {:?}",
         domain_warnings
     );
+    assert_eq!(
+        summary.skipped_no_domain_properties.len(),
+        2,
+        "expected 2 skipped_no_domain_properties, got: {:?}",
+        summary.skipped_no_domain_properties
+    );
+    assert!(
+        summary
+            .skipped_no_domain_properties
+            .contains(&"name".to_string()),
+        "skipped_no_domain_properties must contain 'name'"
+    );
+    assert!(
+        summary
+            .skipped_no_domain_properties
+            .contains(&"homepage".to_string()),
+        "skipped_no_domain_properties must contain 'homepage'"
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
