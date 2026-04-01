@@ -8,12 +8,14 @@
 //! | Turtle construct              | Maps to                              |
 //! |-------------------------------|--------------------------------------|
 //! | `owl:Class`, `rdfs:Class`, `schema:Class` via `rdf:type` | `__SO_Class` node |
-//! | `owl:ObjectProperty`, `owl:DatatypeProperty` via `rdf:type` | `__SO_Relation` node |
+//! | `owl:ObjectProperty` via `rdf:type` | `__SO_Relation` node |
+//! | `owl:DatatypeProperty` via `rdf:type` | `add_property` on the domain class |
 //! | `rdfs:subClassOf`             | `__SO_SUBCLASS_OF` edge              |
 //! | `rdfs:label`                  | `name` property (prefer `@en`)       |
 //! | `rdfs:comment`                | `description` property               |
-//! | `rdfs:domain`                 | `__SO_DOMAIN` edge (subject to strategy) |
-//! | `rdfs:range`                  | `__SO_RANGE` edge (subject to strategy) |
+//! | `rdfs:domain`                 | `__SO_DOMAIN` edge (subject to strategy) OR `add_property` owner |
+//! | `rdfs:range` (class IRI)      | `__SO_RANGE` edge (subject to strategy) |
+//! | `rdfs:range` (XSD datatype)   | property type for `owl:DatatypeProperty` |
 //! | `schema:domainIncludes`       | `__SO_DOMAIN` edge (subject to strategy) |
 //! | `schema:rangeIncludes`        | `__SO_RANGE` edge (subject to strategy) |
 //! | `skos:altLabel`               | `__SO_Alias` node                    |
@@ -26,7 +28,7 @@ use sparrowdb_common::NodeId;
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::SoError;
-use crate::init::{add_alias, define_subclass};
+use crate::init::{add_alias, add_property, define_subclass};
 use crate::model::{AliasKind, SymbolStatus};
 use crate::namespace::{CLASS_LABEL, DOMAIN_REL, RANGE_REL, RELATION_LABEL};
 
@@ -84,6 +86,7 @@ pub struct ImportSummary {
     pub relations_imported: usize,
     pub subclasses_imported: usize,
     pub aliases_imported: usize,
+    pub properties_imported: usize,
     pub warnings: Vec<String>,
 }
 
@@ -104,7 +107,8 @@ pub fn import_turtle(
     // ── Step 1: Parse all triples into in-memory maps ─────────────────────────
 
     let mut class_iris: HashSet<String> = HashSet::new();
-    let mut prop_iris: HashSet<String> = HashSet::new();
+    let mut obj_prop_iris: HashSet<String> = HashSet::new();
+    let mut data_prop_iris: HashSet<String> = HashSet::new();
 
     // IRI → preferred label  (tracking language preference separately)
     let mut labels_en: HashMap<String, String> = HashMap::new();
@@ -162,8 +166,11 @@ pub fn import_turtle(
                         t if t == OWL_CLASS || t == RDFS_CLASS || t == SCHEMA_CLASS => {
                             class_iris.insert(subject_iri);
                         }
-                        t if t == OWL_OBJ_PROP || t == OWL_DATA_PROP => {
-                            prop_iris.insert(subject_iri);
+                        t if t == OWL_OBJ_PROP => {
+                            obj_prop_iris.insert(subject_iri);
+                        }
+                        t if t == OWL_DATA_PROP => {
+                            data_prop_iris.insert(subject_iri);
                         }
                         _ => {}
                     }
@@ -257,7 +264,11 @@ pub fn import_turtle(
     // ── Step 2: Build consolidated label map ──────────────────────────────────
 
     // Merge all IRIs seen (classes + props + anything with a label)
-    let all_iris: HashSet<&String> = class_iris.iter().chain(prop_iris.iter()).collect();
+    let all_iris: HashSet<&String> = class_iris
+        .iter()
+        .chain(obj_prop_iris.iter())
+        .chain(data_prop_iris.iter())
+        .collect();
     let mut labels: HashMap<String, String> = HashMap::new();
     for iri in &all_iris {
         let label = labels_en
@@ -285,6 +296,7 @@ pub fn import_turtle(
     let mut relations_imported: usize = 0;
     let mut subclasses_imported: usize = 0;
     let mut aliases_imported: usize = 0;
+    let mut properties_imported: usize = 0;
 
     // 4a. Import classes
     for iri in &class_iris {
@@ -329,8 +341,8 @@ pub fn import_turtle(
         }
     }
 
-    // 4c. Import relations
-    for iri in &prop_iris {
+    // 4c. Import relations (owl:ObjectProperty)
+    for iri in &obj_prop_iris {
         let name = iri_to_name
             .get(iri)
             .cloned()
@@ -344,7 +356,48 @@ pub fn import_turtle(
         }
     }
 
-    // 4d. Import aliases (skos:altLabel)
+    // 4d. Import data properties (owl:DatatypeProperty → add_property)
+    for iri in &data_prop_iris {
+        let name = iri_to_name
+            .get(iri)
+            .cloned()
+            .unwrap_or_else(|| local_name(iri));
+
+        // Collect all resolvable domain classes (rdfs:domain or schema:domainIncludes)
+        let domain_names: Vec<String> = domains
+            .get(iri)
+            .map(|v| {
+                v.iter()
+                    .filter_map(|d_iri| iri_to_name.get(d_iri).cloned())
+                    .collect()
+            })
+            .unwrap_or_default();
+
+        if domain_names.is_empty() {
+            warnings.push(format!("data property '{name}': no rdfs:domain — skipped"));
+            continue;
+        }
+
+        // Resolve XSD range → Sparrow property type
+        let type_str = ranges
+            .get(iri)
+            .and_then(|v| v.first())
+            .map(|xsd_iri| xsd_to_type_str(xsd_iri))
+            .unwrap_or("string");
+
+        // Import property on each domain class
+        for owner in &domain_names {
+            match add_property(db, owner, &name, type_str, false, false, None) {
+                Ok(_) => properties_imported += 1,
+                Err(SoError::DuplicateProperty { .. }) => {
+                    // Idempotent — already declared
+                }
+                Err(e) => warnings.push(format!("data property '{name}' on '{owner}': {e}")),
+            }
+        }
+    }
+
+    // 4e. Import aliases (skos:altLabel)
     for (iri, alts) in &alt_labels {
         let name = match iri_to_name.get(iri) {
             Some(n) => n.clone(),
@@ -352,8 +405,11 @@ pub fn import_turtle(
         };
         let kind = if class_iris.contains(iri) {
             AliasKind::Class
-        } else {
+        } else if obj_prop_iris.contains(iri) {
             AliasKind::Relation
+        } else {
+            // data properties don't have an alias kind — skip
+            continue;
         };
         for alt in alts {
             match add_alias(db, alt, kind.clone(), &name) {
@@ -375,11 +431,38 @@ pub fn import_turtle(
         relations_imported,
         subclasses_imported,
         aliases_imported,
+        properties_imported,
         warnings,
     })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+/// Map an XSD datatype IRI to a Sparrow property type string.
+fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
+    match xsd_iri {
+        i if i.ends_with("#integer")
+            || i.ends_with("#int")
+            || i.ends_with("#long")
+            || i.ends_with("#short")
+            || i.ends_with("#byte")
+            || i.ends_with("#nonNegativeInteger")
+            || i.ends_with("#positiveInteger")
+            || i.ends_with("#negativeInteger")
+            || i.ends_with("#nonPositiveInteger")
+            || i.ends_with("#unsignedLong")
+            || i.ends_with("#unsignedInt") =>
+        {
+            "int64"
+        }
+        i if i.ends_with("#decimal") || i.ends_with("#float") || i.ends_with("#double") => {
+            "float64"
+        }
+        i if i.ends_with("#boolean") => "bool",
+        i if i.ends_with("#date") || i.ends_with("#dateTime") || i.ends_with("#time") => "date",
+        _ => "string",
+    }
+}
 
 /// Extract the local name from an IRI (everything after the last `#` or `/`).
 fn local_name(iri: &str) -> String {

@@ -7,10 +7,12 @@
 
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_core::{
-    export_json_ld, init,
+    export_json_ld, export_schema, init,
     turtle_import::{import_turtle, DomainRangeStrategy, ImportOptions},
-    StarterKind,
+    PropertyType, StarterKind,
 };
+
+// Covers also: owl:DatatypeProperty → add_property (issue #35)
 
 // ── DB helpers ─────────────────────────────────────────────────────────────────
 
@@ -146,20 +148,28 @@ schema:name a owl:DatatypeProperty ;
     };
     let summary = import_turtle(&db, ttl, opts).unwrap();
 
+    // owl:DatatypeProperty maps to add_property, not a relation.
+    // With two domain classes, the property is added to each.
     assert_eq!(
-        summary.relations_imported, 1,
-        "expected 1 relation (name), got {}",
-        summary.relations_imported
+        summary.relations_imported, 0,
+        "owl:DatatypeProperty must not create relations"
+    );
+    assert_eq!(
+        summary.properties_imported, 2,
+        "expected 1 property per domain class (Person + Organization), got {}",
+        summary.properties_imported
     );
 
-    // With Unconstrained strategy and 2 domains, no rdfs:domain edge is created.
-    let doc = export_json_ld(&db).unwrap();
-    let graph = get_graph(&doc);
-    let rel_node = find_node_by_label(graph, "name").expect("'name' relation not found in @graph");
-
+    let snap = export_schema(&db).unwrap();
+    let has_name = |owner: &str| {
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == owner && p.name == "name")
+    };
+    assert!(has_name("Person"), "'name' property missing on Person");
     assert!(
-        rel_node.get("rdfs:domain").is_none(),
-        "rdfs:domain must be absent when multiple domainIncludes values exist with Unconstrained strategy"
+        has_name("Organization"),
+        "'name' property missing on Organization"
     );
 }
 
@@ -188,17 +198,24 @@ schema:email a owl:DatatypeProperty ;
         base_iri: None,
         domain_range_strategy: DomainRangeStrategy::Unconstrained,
     };
-    import_turtle(&db, ttl, opts).unwrap();
+    let summary = import_turtle(&db, ttl, opts).unwrap();
 
-    let doc = export_json_ld(&db).unwrap();
-    let graph = get_graph(&doc);
-    let rel_node =
-        find_node_by_label(graph, "email").expect("'email' relation not found in @graph");
+    // owl:DatatypeProperty → add_property on the domain class, not a relation.
+    assert_eq!(
+        summary.relations_imported, 0,
+        "owl:DatatypeProperty must not create relations"
+    );
+    assert_eq!(
+        summary.properties_imported, 1,
+        "expected 1 data property imported"
+    );
 
-    // Single domainIncludes with Unconstrained → domain is set
+    let snap = export_schema(&db).unwrap();
     assert!(
-        rel_node.get("rdfs:domain").is_some(),
-        "rdfs:domain must be present when exactly one domainIncludes value exists"
+        snap.properties
+            .iter()
+            .any(|p| p.owner_name == "Person" && p.name == "email"),
+        "'email' property must be added to Person class"
     );
 }
 
@@ -475,5 +492,158 @@ fn empty_turtle_returns_empty_summary() {
     assert!(
         summary.warnings.is_empty(),
         "empty input: warnings must be empty"
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 13 — owl:DatatypeProperty → add_property (issue #35)
+// ══════════════════════════════════════════════════════════════════════════════
+
+const DATATYPE_TTL: &str = r#"
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex:   <https://example.org/> .
+
+ex:Person a owl:Class ;
+    rdfs:label "Person" .
+
+ex:age a owl:DatatypeProperty ;
+    rdfs:label "age" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:integer .
+
+ex:name a owl:DatatypeProperty ;
+    rdfs:label "name" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:string .
+
+ex:score a owl:DatatypeProperty ;
+    rdfs:label "score" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:float .
+
+ex:active a owl:DatatypeProperty ;
+    rdfs:label "active" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:boolean .
+
+ex:joinedAt a owl:DatatypeProperty ;
+    rdfs:label "joinedAt" ;
+    rdfs:domain ex:Person ;
+    rdfs:range xsd:dateTime .
+"#;
+
+#[test]
+fn datatype_properties_imported_as_add_property() {
+    let (_dir, db) = blank_db();
+    let summary = import_turtle(&db, DATATYPE_TTL, ImportOptions::default()).unwrap();
+
+    assert_eq!(summary.classes_imported, 1, "expected 1 class");
+    assert_eq!(
+        summary.relations_imported, 0,
+        "owl:DatatypeProperty must NOT create relations"
+    );
+    assert_eq!(summary.properties_imported, 5, "expected 5 data properties");
+    assert!(
+        summary.warnings.is_empty(),
+        "unexpected warnings: {:?}",
+        summary.warnings
+    );
+
+    let snap = export_schema(&db).unwrap();
+    let person_props: Vec<_> = snap
+        .properties
+        .iter()
+        .filter(|p| p.owner_name == "Person")
+        .collect();
+
+    assert_eq!(
+        person_props.len(),
+        5,
+        "Person should have 5 properties after import"
+    );
+
+    let names: Vec<&str> = person_props.iter().map(|p| p.name.as_str()).collect();
+    assert!(names.contains(&"age"), "missing 'age'");
+    assert!(names.contains(&"name"), "missing 'name'");
+    assert!(names.contains(&"score"), "missing 'score'");
+    assert!(names.contains(&"active"), "missing 'active'");
+    assert!(names.contains(&"joinedAt"), "missing 'joinedAt'");
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 14 — XSD type mapping: integer→int, float→float, boolean→bool, date→date
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn datatype_xsd_types_map_correctly() {
+    let (_dir, db) = blank_db();
+    import_turtle(&db, DATATYPE_TTL, ImportOptions::default()).unwrap();
+
+    let snap = export_schema(&db).unwrap();
+    let prop = |name: &str| {
+        snap.properties
+            .iter()
+            .find(|p| p.owner_name == "Person" && p.name == name)
+            .unwrap_or_else(|| panic!("property '{}' not found", name))
+            .datatype
+            .clone()
+    };
+
+    assert!(
+        matches!(prop("age"), PropertyType::Int64),
+        "age should be Int64"
+    );
+    assert!(
+        matches!(prop("name"), PropertyType::String),
+        "name should be String"
+    );
+    assert!(
+        matches!(prop("score"), PropertyType::Float64),
+        "score should be Float64"
+    );
+    assert!(
+        matches!(prop("active"), PropertyType::Bool),
+        "active should be Bool"
+    );
+    assert!(
+        matches!(prop("joinedAt"), PropertyType::Date),
+        "joinedAt should be Date"
+    );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Test 15 — DatatypeProperty without domain → warning, not panic
+// ══════════════════════════════════════════════════════════════════════════════
+
+#[test]
+fn datatype_property_no_domain_emits_warning() {
+    let (_dir, db) = blank_db();
+    let ttl = r#"
+@prefix owl:  <http://www.w3.org/2002/07/owl#> .
+@prefix rdfs: <http://www.w3.org/2000/01/rdf-schema#> .
+@prefix xsd:  <http://www.w3.org/2001/XMLSchema#> .
+@prefix ex:   <https://example.org/> .
+
+ex:orphan a owl:DatatypeProperty ;
+    rdfs:label "orphan" ;
+    rdfs:range xsd:string .
+"#;
+
+    let summary = import_turtle(&db, ttl, ImportOptions::default()).unwrap();
+    assert_eq!(
+        summary.properties_imported, 0,
+        "no-domain property must not be imported"
+    );
+    assert_eq!(
+        summary.warnings.len(),
+        1,
+        "expected exactly one warning for missing domain"
+    );
+    assert!(
+        summary.warnings[0].contains("no rdfs:domain"),
+        "warning must mention missing domain, got: {}",
+        summary.warnings[0]
     );
 }
