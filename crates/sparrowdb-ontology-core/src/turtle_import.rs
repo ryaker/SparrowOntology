@@ -29,9 +29,9 @@ use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::SoError;
 use crate::init::{add_alias, add_property, define_subclass};
-use crate::resolution::resolve;
 use crate::model::{AliasKind, PropertyType, SymbolStatus};
 use crate::namespace::{CLASS_LABEL, DOMAIN_REL, RANGE_REL, RELATION_LABEL};
+use crate::resolution::resolve;
 use crate::snapshot::export_schema;
 
 // ── IRI constants ─────────────────────────────────────────────────────────────
