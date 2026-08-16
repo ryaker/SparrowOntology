@@ -195,6 +195,10 @@ pub struct ExportReport {
     pub orphan_relation_types: Vec<String>,
     /// Edges whose source or target node no longer exists.
     pub dangling_edges: usize,
+    /// Classes or entities whose name/IRI could not be turned into a valid
+    /// RDF IRI (e.g. a class name containing a space). Skipped rather than
+    /// failing the whole export — see `issues` for detail.
+    pub unrepresentable_iris: usize,
     pub issues: Vec<ExportIssue>,
 }
 
@@ -558,7 +562,22 @@ fn collect_data_triples(
             });
             continue;
         };
-        let class_node = named(class_iri)?;
+        let class_node = match named(class_iri) {
+            Ok(n) => n,
+            Err(e) => {
+                report.unrepresentable_iris += 1;
+                report.issues.push(ExportIssue {
+                    subject: label.clone(),
+                    reason: format!(
+                        "class '{label}' has an IRI that could not be represented in RDF \
+                         ({e}); its nodes were not exported. Set a valid `iri` on the class \
+                         (see define_class), or rename it to avoid characters that are \
+                         invalid in an IRI."
+                    ),
+                });
+                continue;
+            }
+        };
         let empty = HashMap::new();
         let cols = idx.props_by_class.get(label).unwrap_or(&empty);
 
@@ -585,7 +604,21 @@ fn collect_data_triples(
                 None
             });
             let subject_iri = stored_iri.unwrap_or_else(|| format!("{base}/{label}/{node_id}"));
-            let subject = named(&subject_iri)?;
+            let subject = match named(&subject_iri) {
+                Ok(s) => s,
+                Err(e) => {
+                    report.unrepresentable_iris += 1;
+                    report.issues.push(ExportIssue {
+                        subject: subject_iri.clone(),
+                        reason: format!(
+                            "node id {node_id} on label '{label}' has an IRI that could not \
+                             be represented in RDF ({e}); it was not exported. This node's \
+                             edges will be reported as dangling."
+                        ),
+                    });
+                    continue;
+                }
+            };
 
             subject_by_id.insert(*node_id, subject.clone());
             report.entities_exported += 1;

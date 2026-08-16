@@ -98,6 +98,28 @@ fn edge(db: &GraphDb, src: NodeId, dst: NodeId, rel: &str) {
     tx.commit().unwrap();
 }
 
+/// Declare a class with no `iri` set, bypassing `define_class`'s validation
+/// (which only rejects the `__SO_`-reserved prefix, not arbitrary characters)
+/// so the default-minted class IRI (`{base}/schema/{name}`) is exercised with
+/// a name that cannot form a valid IRI segment.
+fn define_class_raw(db: &GraphDb, name: &str) {
+    let props: HashMap<String, StoreValue> = [
+        ("symbol_id".to_string(), sv(&format!("test-symbol-{name}"))),
+        ("name".to_string(), sv(name)),
+        ("description".to_string(), sv("")),
+        ("status".to_string(), sv("active")),
+        ("iri".to_string(), sv("")),
+        ("created_at".to_string(), StoreValue::Int64(0)),
+        ("updated_at".to_string(), StoreValue::Int64(0)),
+    ]
+    .into_iter()
+    .collect();
+    let mut tx = db.begin_write().unwrap();
+    tx.merge_node(sparrowdb_ontology_core::namespace::CLASS_LABEL, props)
+        .unwrap();
+    tx.commit().unwrap();
+}
+
 /// Seed the fixture described above and checkpoint.
 fn seed(db: &GraphDb) {
     declare_schema(db);
@@ -613,6 +635,92 @@ fn dangling_edges_are_skipped_and_reported() {
     assert_eq!(report.relationships_exported, 0);
     assert!(!ttl.contains("KNOWS"));
     assert!(!ttl.contains("WORKS_FOR"));
+}
+
+/// A node whose subject IRI cannot be parsed (here: a stored `__so_iri` with
+/// an embedded space, which `NamedNode::new` rejects) must be skipped and
+/// reported, not abort the entire export — the same contract the module
+/// already honours for orphan labels/properties and dangling edges.
+#[test]
+fn unrepresentable_subject_iri_is_skipped_not_fatal() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = GraphDb::open(dir.path()).unwrap();
+    declare_schema(&db);
+
+    let bad = node(
+        &db,
+        "Person",
+        &[
+            ("name", sv("Bad Iri")),
+            ("__so_iri", sv("not a valid iri with spaces")),
+        ],
+    );
+    let good = node(&db, "Person", &[("name", sv("Good Node"))]);
+    edge(&db, bad, good, "KNOWS");
+    db.checkpoint().unwrap();
+
+    let (ttl, report) = export_data_with_report(&db, BASE).unwrap();
+
+    // Only the good node exports: 1 rdf:type + 1 name = 2 triples.
+    assert_eq!(report.entities_exported, 1, "{ttl}");
+    assert_eq!(report.triples_emitted, 2, "{ttl}");
+    assert_eq!(report.unrepresentable_iris, 1, "{report:?}");
+    assert!(
+        report
+            .issues
+            .iter()
+            .any(|i| i.reason.contains("could not be represented in RDF")),
+        "{report:?}"
+    );
+    // The KNOWS edge lost its source (the bad node was never inserted into
+    // subject_by_id), so it's reported as dangling rather than half-exported.
+    assert_eq!(report.dangling_edges, 1, "{report:?}");
+    assert!(!ttl.contains("KNOWS"));
+    assert!(!ttl.contains("Bad Iri"));
+    assert!(ttl.contains("Good Node"), "{ttl}");
+}
+
+/// A class whose IRI (default-minted from its name) cannot be parsed — e.g. a
+/// class name containing a space, which is not rejected by `define_class`
+/// today — must skip that class's nodes and report it, not abort the whole
+/// export. This is the same failure mode `unrepresentable_subject_iri_is_skipped_not_fatal`
+/// covers, but at the class/label granularity instead of the per-node one.
+#[test]
+fn unrepresentable_class_iri_is_skipped_not_fatal() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = GraphDb::open(dir.path()).unwrap();
+    declare_schema(&db);
+
+    define_class_raw(&db, "Online Account");
+    add_property(
+        &db,
+        "Online Account",
+        "handle",
+        "string",
+        false,
+        false,
+        None,
+        None,
+        None,
+    )
+    .unwrap();
+    node(&db, "Online Account", &[("handle", sv("@example"))]);
+    let person = node(&db, "Person", &[("name", sv("Ada Lovelace"))]);
+    db.checkpoint().unwrap();
+
+    let (ttl, report) = export_data_with_report(&db, BASE).unwrap();
+
+    // Only Person exports: 1 rdf:type + 1 name = 2 triples.
+    assert_eq!(report.entities_exported, 1, "{ttl}");
+    assert_eq!(report.triples_emitted, 2, "{ttl}");
+    assert_eq!(report.unrepresentable_iris, 1, "{report:?}");
+    assert!(
+        report.issues.iter().any(|i| i.subject == "Online Account"
+            && i.reason.contains("could not be represented in RDF")),
+        "{report:?}"
+    );
+    assert!(!ttl.contains("@example"));
+    let _ = person;
 }
 
 /// Acceptance: `export_json_ld` (schema) behaviour is unchanged.
