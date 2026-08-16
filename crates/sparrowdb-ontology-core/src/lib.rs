@@ -27,7 +27,8 @@ pub use model::{
 };
 pub use rdf_data::{
     export_data_json_ld, export_data_turtle, export_data_with_report, import_data_turtle,
-    property_type_to_xsd, ExportIssue, ExportReport, ImportReport, ImportSkip, ImportStrategy,
+    property_type_to_xsd, property_value_to_store, ExportIssue, ExportReport, ImportReport,
+    ImportSkip, ImportStrategy,
 };
 pub use resolution::{resolve, ResolvedSymbol};
 pub use snapshot::{

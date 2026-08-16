@@ -11,7 +11,7 @@ use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
-use sparrowdb_ontology_core::{resolve, ValidationContext};
+use sparrowdb_ontology_core::{property_value_to_store, resolve, ValidationContext};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp, so_error_to_mcp_error};
@@ -181,21 +181,6 @@ fn json_to_property_value(v: &Value) -> PropertyValue {
     }
 }
 
-// ── PropertyValue → StoreValue ────────────────────────────────────────────────
-
-fn property_value_to_store(v: &PropertyValue) -> Option<StoreValue> {
-    match v {
-        PropertyValue::String(s) => Some(StoreValue::Bytes(s.as_bytes().to_vec())),
-        PropertyValue::Int64(n) => Some(StoreValue::Int64(*n)),
-        PropertyValue::Float64(f) => {
-            // Store floats as bytes (string representation) since StoreValue may not have Float64
-            Some(StoreValue::Bytes(f.to_string().as_bytes().to_vec()))
-        }
-        PropertyValue::Bool(b) => Some(StoreValue::Int64(if *b { 1 } else { 0 })),
-        PropertyValue::Null => None,
-    }
-}
-
 fn props_to_store(props: &HashMap<String, PropertyValue>) -> HashMap<String, StoreValue> {
     props
         .iter()
@@ -274,19 +259,13 @@ pub fn export_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, 
     let (turtle, report) = sparrowdb_ontology_core::export_data_with_report(db, &base_iri)
         .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
 
+    // Serialize the whole ExportReport rather than re-listing fields here —
+    // a manually maintained subset silently falls behind whenever the report
+    // grows a field (this is exactly how it missed `unrepresentable_iris`).
     Ok(json!({
         "content": [
             {"type": "text", "text": turtle},
-            {"type": "text", "text": serde_json::to_string(&json!({
-                "entities_exported": report.entities_exported,
-                "relationships_exported": report.relationships_exported,
-                "triples_emitted": report.triples_emitted,
-                "orphan_properties": report.orphan_properties,
-                "orphan_labels": report.orphan_labels,
-                "orphan_relation_types": report.orphan_relation_types,
-                "dangling_edges": report.dangling_edges,
-                "issues": report.issues,
-            })).unwrap_or_default()}
+            {"type": "text", "text": serde_json::to_string(&report).unwrap_or_default()}
         ]
     }))
 }
@@ -298,6 +277,12 @@ pub fn export_data_json_ld(db: &GraphDb, params: Option<Value>) -> Result<Value,
     let doc = sparrowdb_ontology_core::export_data_json_ld(db, &base_iri)
         .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
 
+    // Re-run for the report; the export itself is read-only, and this gives
+    // callers the same unrepresentable-IRI/orphan/dangling-edge diagnostics
+    // export_data_turtle returns instead of silently omitting them.
+    let (_, report) = sparrowdb_ontology_core::export_data_with_report(db, &base_iri)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
+
     let text = serde_json::to_string_pretty(&doc).map_err(|e| {
         mcp_error(
             -32603,
@@ -305,7 +290,12 @@ pub fn export_data_json_ld(db: &GraphDb, params: Option<Value>) -> Result<Value,
             json!({"detail": e.to_string()}),
         )
     })?;
-    Ok(json!({ "content": [{"type": "text", "text": text}] }))
+    Ok(json!({
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "text", "text": serde_json::to_string(&report).unwrap_or_default()}
+        ]
+    }))
 }
 
 pub fn import_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {

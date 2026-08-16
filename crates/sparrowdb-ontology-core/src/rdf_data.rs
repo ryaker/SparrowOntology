@@ -388,6 +388,27 @@ fn named(iri: &str) -> Result<NamedNode, SoError> {
     })
 }
 
+/// Backtick-quote a label or relationship-type for safe interpolation into a
+/// generated Cypher query (`MATCH (n:{ident}) ...`).
+///
+/// Labels and relationship types reach this module from `db.labels()` /
+/// `db.relationship_types()` — names that were, at write time, accepted
+/// verbatim by `merge_node`/`create_edge` with no character validation (they
+/// are opaque catalog keys there, not Cypher text). By the time they get
+/// here they are about to be spliced into a `format!`-built query string, so
+/// an unquoted name containing e.g. `)` or a space would corrupt the query.
+/// SparrowDB's Cypher lexer supports backtick-quoted identifiers for exactly
+/// this case, but has no escape for an embedded backtick — so a name that
+/// itself contains a backtick cannot be made safe this way and is rejected.
+fn cypher_ident(name: &str) -> Result<String, SoError> {
+    if name.contains('`') {
+        return Err(SoError::Storage(sparrowdb_common::Error::InvalidArgument(
+            format!("'{name}' contains a backtick, which cannot be safely quoted in Cypher"),
+        )));
+    }
+    Ok(format!("`{name}`"))
+}
+
 // ── Value formatting ──────────────────────────────────────────────────────────
 
 /// Format an `f64` as a valid `xsd:double` lexical form.
@@ -581,7 +602,21 @@ fn collect_data_triples(
         let empty = HashMap::new();
         let cols = idx.props_by_class.get(label).unwrap_or(&empty);
 
-        let q = format!("MATCH (n:{label}) RETURN id(n), n");
+        let quoted_label = match cypher_ident(label) {
+            Ok(q) => q,
+            Err(e) => {
+                report.unrepresentable_iris += 1;
+                report.issues.push(ExportIssue {
+                    subject: label.clone(),
+                    reason: format!(
+                        "label '{label}' cannot be safely used in a generated query ({e}); its \
+                         nodes were not exported."
+                    ),
+                });
+                continue;
+            }
+        };
+        let q = format!("MATCH (n:{quoted_label}) RETURN id(n), n");
         let result = execute_or_empty(db, &q)?;
         for row in &result.rows {
             let Some(ExecValue::Int64(node_id)) = row.first() else {
@@ -653,10 +688,22 @@ fn collect_data_triples(
                     continue; // NULL or an unrepresentable value: nothing to emit.
                 };
                 let pred_iri = property_predicate_iri(&base, prop);
-                insert_triple(
-                    &mut out,
-                    Triple::new(subject.clone(), named(&pred_iri)?, obj),
-                );
+                let pred = match named(&pred_iri) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        report.unrepresentable_iris += 1;
+                        report.issues.push(ExportIssue {
+                            subject: subject_iri.clone(),
+                            reason: format!(
+                                "property '{}' on class '{label}' has an IRI that could not \
+                                 be represented in RDF ({e}); this value was not exported.",
+                                prop.name
+                            ),
+                        });
+                        continue;
+                    }
+                };
+                insert_triple(&mut out, Triple::new(subject.clone(), pred, obj));
             }
         }
     }
@@ -679,9 +726,36 @@ fn collect_data_triples(
             });
             continue;
         };
-        let pred = named(rel_iri)?;
+        let pred = match named(rel_iri) {
+            Ok(p) => p,
+            Err(e) => {
+                report.unrepresentable_iris += 1;
+                report.issues.push(ExportIssue {
+                    subject: rel.clone(),
+                    reason: format!(
+                        "relation '{rel}' has an IRI that could not be represented in RDF \
+                         ({e}); its edges were not exported."
+                    ),
+                });
+                continue;
+            }
+        };
 
-        let q = format!("MATCH (a)-[r:{rel}]->(b) RETURN id(a), id(b)");
+        let quoted_rel = match cypher_ident(rel) {
+            Ok(q) => q,
+            Err(e) => {
+                report.unrepresentable_iris += 1;
+                report.issues.push(ExportIssue {
+                    subject: rel.clone(),
+                    reason: format!(
+                        "relation type '{rel}' cannot be safely used in a generated query \
+                         ({e}); its edges were not exported."
+                    ),
+                });
+                continue;
+            }
+        };
+        let q = format!("MATCH (a)-[r:{quoted_rel}]->(b) RETURN id(a), id(b)");
         let result = execute_or_empty(db, &q)?;
         for row in &result.rows {
             let (Some(ExecValue::Int64(src)), Some(ExecValue::Int64(dst))) =
@@ -759,9 +833,15 @@ pub fn export_data_json_ld(db: &GraphDb, base_iri: &str) -> Result<JsVal, SoErro
     let mut context = JsMap::new();
     context.insert("xsd".into(), json!(XSD_NS));
 
-    // Relations: object properties.
+    // Relations: object properties. Sorted for deterministic @context output —
+    // idx.relation_iri is a HashMap, and if serde_json ever gains
+    // preserve_order, HashMap iteration order would otherwise leak into the
+    // serialized document and vary across runs.
     let mut relation_term_by_iri: HashMap<String, String> = HashMap::new();
-    for (name, iri) in &idx.relation_iri {
+    let mut relation_names: Vec<&String> = idx.relation_iri.keys().collect();
+    relation_names.sort();
+    for name in relation_names {
+        let iri = &idx.relation_iri[name];
         context.insert(name.clone(), json!({ "@id": iri, "@type": "@id" }));
         relation_term_by_iri.insert(iri.clone(), name.clone());
     }
@@ -786,7 +866,7 @@ pub fn export_data_json_ld(db: &GraphDb, base_iri: &str) -> Result<JsVal, SoErro
         prop_term_by_iri.insert(iri, p.name.clone());
     }
     for p in &snap.properties {
-        if conflicting.contains(&p.name) || relation_term_by_iri.contains_key(&p.name) {
+        if conflicting.contains(&p.name) || idx.relation_iri.contains_key(&p.name) {
             prop_term_by_iri.remove(&property_predicate_iri(&base, p));
             continue;
         }
@@ -890,9 +970,16 @@ fn sv(s: &str) -> StoreValue {
     StoreValue::Bytes(s.as_bytes().to_vec())
 }
 
-/// Mirror of the MCP layer's `property_value_to_store`, so that entities written
-/// by import read back byte-identically to entities written by `create_entity`.
-fn property_value_to_store(v: &PropertyValue) -> Option<StoreValue> {
+/// The single conversion from a [`PropertyValue`] to the [`StoreValue`] bytes
+/// SparrowDB stores. The MCP layer's `create_entity`/`update_entity` call this
+/// directly rather than keeping their own copy — a second, drifted
+/// implementation would mean entities written by import and entities written
+/// by `create_entity` are encoded differently and read back with different
+/// shapes. `Float64` is the fragile arm: it must go through [`fmt_f64`], not
+/// a bare `to_string()`, so `f64::INFINITY`/`NEG_INFINITY` round-trip through
+/// the XSD lexical forms (`INF`/`-INF`) that [`lexical_form`] expects on
+/// export, instead of Rust's `Display` output (`inf`/`-inf`).
+pub fn property_value_to_store(v: &PropertyValue) -> Option<StoreValue> {
     match v {
         PropertyValue::String(s) => Some(StoreValue::Bytes(s.as_bytes().to_vec())),
         PropertyValue::Int64(n) => Some(StoreValue::Int64(*n)),
@@ -990,6 +1077,13 @@ pub fn import_data_turtle(
         let pred = triple.predicate.as_str().to_string();
         match &triple.object {
             Term::NamedNode(n) if pred == RDF_TYPE => {
+                if let Some(prev) = &entry.type_iri {
+                    report.warnings.push(format!(
+                        "<{subject_iri}> has more than one rdf:type; <{prev}> was dropped and \
+                         <{}> was used. SparrowOntology v1 assigns one class per entity.",
+                        n.as_str()
+                    ));
+                }
                 entry.type_iri = Some(n.as_str().to_string());
             }
             Term::NamedNode(n) => entry.links.push((pred, n.as_str().to_string())),
@@ -1030,6 +1124,17 @@ pub fn import_data_turtle(
             continue;
         }
         let local = local_name(type_iri);
+        if local.is_empty() {
+            report.entities_skipped += 1;
+            report.skips.push(ImportSkip {
+                subject: iri.clone(),
+                reason: format!(
+                    "rdf:type <{type_iri}> has no local name. Use a type IRI that ends in a \
+                     name, for example <{type_iri}Person>."
+                ),
+            });
+            continue;
+        }
         if let Ok(r) = resolve(db, &local, AliasKind::Class) {
             class_of.insert(iri.clone(), r.canonical_name);
             continue;
@@ -1060,8 +1165,17 @@ pub fn import_data_turtle(
     }
 
     // ── Auto-declare missing data properties ──────────────────────────────────
+    //
+    // `idx` is only rebuilt after this loop (see `added` below), so a property
+    // declared for one subject is invisible to `idx` for every later subject in
+    // the same pass. Track what THIS pass has already declared in
+    // `declared_this_pass` so a second subject of the same class carrying the
+    // same property is recognised locally instead of re-declaring it — which
+    // would otherwise hit `SoError::DuplicateProperty` and (via `?`) abort the
+    // entire import over data that was already handled correctly.
     if strategy == ImportStrategy::AutoDeclare {
         let mut added = false;
+        let mut declared_this_pass: HashSet<(String, String)> = HashSet::new();
         for (iri, data) in &subjects {
             let Some(class) = class_of.get(iri) else {
                 continue;
@@ -1077,11 +1191,14 @@ pub fn import_data_turtle(
                     .get(class)
                     .map(|m| m.contains_key(&name))
                     .unwrap_or(false);
-                if declared || name.starts_with("__so_") {
+                if declared
+                    || name.starts_with("__so_")
+                    || !declared_this_pass.insert((class.clone(), name.clone()))
+                {
                     continue;
                 }
                 let ty = xsd_to_type_str(lit.datatype().as_str());
-                crate::init::add_property(
+                match crate::init::add_property(
                     db,
                     class,
                     &name,
@@ -1091,9 +1208,16 @@ pub fn import_data_turtle(
                     None,
                     None,
                     Some(pred),
-                )?;
-                report.properties_declared += 1;
-                added = true;
+                ) {
+                    Ok(_) => {
+                        report.properties_declared += 1;
+                        added = true;
+                    }
+                    // Already declared by a concurrent/earlier caller outside
+                    // this pass's own tracking — not an error for import.
+                    Err(SoError::DuplicateProperty { .. }) => {}
+                    Err(e) => return Err(e),
+                }
             }
         }
         if added {
@@ -1102,8 +1226,15 @@ pub fn import_data_turtle(
     }
 
     // ── Auto-declare missing relations ────────────────────────────────────────
+    //
+    // Same staleness issue as the property pass above: track relation names
+    // this pass has already declared so a repeat only counts once in
+    // `report.relations_declared` (write_relation_node itself is a safe
+    // upsert via merge_node, so a repeat doesn't error — it just shouldn't be
+    // double-counted).
     if strategy == ImportStrategy::AutoDeclare {
         let mut added = false;
+        let mut declared_this_pass: HashSet<String> = HashSet::new();
         for (iri, data) in &subjects {
             let Some(src_class) = class_of.get(iri) else {
                 continue;
@@ -1120,6 +1251,7 @@ pub fn import_data_turtle(
                         .get(src_class)
                         .map(|m| m.contains_key(&name))
                         .unwrap_or(false)
+                    || !declared_this_pass.insert(name.clone())
                 {
                     continue;
                 }

@@ -856,19 +856,34 @@ fn cmd_export_data(
     eprintln!("  Relationships: {}", report.relationships_exported);
     eprintln!("  Triples:       {}", report.triples_emitted);
     if report.orphan_properties > 0 {
-        eprintln!(
-            "  Undeclared columns skipped: {} (declare them with add_property to export them)",
-            report.orphan_properties
-        );
+        eprintln!("  Undeclared columns skipped: {}", report.orphan_properties);
     }
     if report.dangling_edges > 0 {
         eprintln!("  Dangling edges skipped:     {}", report.dangling_edges);
     }
-    for label in &report.orphan_labels {
-        eprintln!("  Unknown label skipped:      {label}");
+    if !report.orphan_labels.is_empty() {
+        eprintln!(
+            "  Unknown labels skipped:     {}",
+            report.orphan_labels.len()
+        );
     }
-    for rel in &report.orphan_relation_types {
-        eprintln!("  Unknown relation skipped:   {rel}");
+    if !report.orphan_relation_types.is_empty() {
+        eprintln!(
+            "  Unknown relations skipped:  {}",
+            report.orphan_relation_types.len()
+        );
+    }
+    if report.unrepresentable_iris > 0 {
+        eprintln!(
+            "  Unrepresentable IRIs skipped: {}",
+            report.unrepresentable_iris
+        );
+    }
+    if !report.issues.is_empty() {
+        eprintln!("Issues ({}):", report.issues.len());
+        for issue in &report.issues {
+            eprintln!("  <{}>: {}", issue.subject, issue.reason);
+        }
     }
     Ok(())
 }
@@ -912,7 +927,8 @@ fn cmd_import_data(db_path: &Path, file: &Path, strategy: &str) -> Result<(), St
     }
 
     let skipped = report.entities_skipped + report.relationships_skipped;
-    if skipped > 0 {
+    let skipped_total = skipped + report.blank_nodes_skipped;
+    if skipped_total > 0 {
         println!(
             "  Skipped: {} entities, {} relationships",
             report.entities_skipped, report.relationships_skipped
@@ -920,7 +936,7 @@ fn cmd_import_data(db_path: &Path, file: &Path, strategy: &str) -> Result<(), St
         for s in &report.skips {
             println!("    <{}>: {}", s.subject, s.reason);
         }
-        return Err(format!("{skipped} item(s) were not imported"));
+        return Err(format!("{skipped_total} item(s) were not imported"));
     }
     Ok(())
 }

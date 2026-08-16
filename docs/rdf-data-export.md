@@ -149,7 +149,7 @@ matching ontology declaration therefore cannot be recovered by name, and cannot
 be exported. Such columns are **counted and reported** as
 `ExportReport::orphan_properties`, with an issue naming the subject and the fix:
 
-```
+```text
 Stored column 'col_1234567890' has no ontology-declared property on class
 'Person'. Property names hash one-way to col_<fnv1a32>, so this value cannot be
 named in RDF. Declare it with add_property(owner='Person', …) and re-export.
@@ -167,7 +167,7 @@ Nothing is ever dropped silently. Every skip is recorded with the offending
 subject IRI and an actionable reason, in the same style as `create_entity`
 errors:
 
-```
+```text
 Unknown property 'favouriteColour' (from <…/schema/favouriteColour>) on class
 'Person'. Valid: ["email", "name"]. Declare it with
 add_property(owner='Person', name='favouriteColour'), or re-run with
