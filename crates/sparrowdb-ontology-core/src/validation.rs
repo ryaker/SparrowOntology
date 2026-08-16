@@ -163,7 +163,7 @@ pub fn validate(db: &GraphDb) -> Result<ValidationReport, SoError> {
 }
 
 /// Provenance properties that callers ARE allowed to set.
-const ALLOWED_SO_KEYS: &[&str] = &["__so_source_label", "__so_source_rel"];
+const ALLOWED_SO_KEYS: &[&str] = &["__so_source_label", "__so_source_rel", "__so_iri"];
 
 // ── ValidationContext ─────────────────────────────────────────────────────────
 

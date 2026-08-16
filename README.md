@@ -82,7 +82,7 @@ sparrow-ontology-mcp --db my.db --transport http --port 3456
 
 ---
 
-## MCP Tools (19 total)
+## MCP Tools (22 total)
 
 | Tool | What it does |
 |------|-------------|
@@ -105,6 +105,9 @@ sparrow-ontology-mcp --db my.db --transport http --port 3456
 | `resolve_name` | Resolve an alias to its canonical symbol. |
 | `export_json_ld` | Export the full ontology as a JSON-LD document — owl:Class, owl:ObjectProperty, rdfs:subClassOf, skos:altLabel, and so: extensions. |
 | `import_turtle` | Import classes, relations, subclasses, and aliases from Turtle (.ttl) text. Handles schema.org domainIncludes/rangeIncludes. Unsupported OWL constructs fail gracefully with warnings. |
+| `export_data_turtle` | Export the instance **data** (entities + relationships) as Turtle, with XSD datatypes derived from the ontology. Reports anything it could not represent. |
+| `export_data_json_ld` | The same data graph as JSON-LD 1.1, with an `@context` derived from the ontology. |
+| `import_data_turtle` | Import instance data through the validated write path. Every skip is reported with its subject IRI and an actionable reason. |
 
 ---
 
@@ -347,7 +350,7 @@ SparrowDB  (embedded Rust graph engine · zero external deps)
 git clone https://github.com/ryaker/SparrowOntology
 cd SparrowOntology
 cargo build --workspace
-cargo test --workspace       # 166 tests, all integration, no mocks
+cargo test --workspace       # 211 tests, all integration, no mocks
 ```
 
 Requires Rust 1.75+.

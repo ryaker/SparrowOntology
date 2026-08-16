@@ -21,7 +21,11 @@ pub fn handle_tool_call(db: &GraphDb, name: &str, params: Option<Value>) -> Resu
         | "update_entity"
         | "find_entities"
         | "explain_symbol"
-        | "validate" => data::dispatch(db, name, params),
+        | "validate"
+        // Instance-data RDF tools (WS1)
+        | "export_data_turtle"
+        | "export_data_json_ld"
+        | "import_data_turtle" => data::dispatch(db, name, params),
 
         other => Err(mcp_error(
             -32601,

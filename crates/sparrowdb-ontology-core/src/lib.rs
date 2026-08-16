@@ -5,6 +5,7 @@ pub mod init;
 pub mod jsonld;
 pub mod model;
 pub mod namespace;
+pub mod rdf_data;
 pub mod resolution;
 pub mod snapshot;
 pub mod turtle_import;
@@ -23,6 +24,10 @@ pub use model::{
     research_notes_classes, research_notes_properties, research_notes_relations, AliasKind,
     OntologyAlias, OntologyClass, OntologyProperty, OntologyRelation, OwnerKind, PropertyType,
     PropertyValue, SymbolStatus,
+};
+pub use rdf_data::{
+    export_data_json_ld, export_data_turtle, export_data_with_report, import_data_turtle,
+    property_type_to_xsd, ExportIssue, ExportReport, ImportReport, ImportSkip, ImportStrategy,
 };
 pub use resolution::{resolve, ResolvedSymbol};
 pub use snapshot::{

@@ -240,8 +240,106 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
         "find_entities" => find_entities(db, params),
         "explain_symbol" => explain_symbol(db, params),
         "validate" => validate(db, params),
+        "export_data_turtle" => export_data_turtle(db, params),
+        "export_data_json_ld" => export_data_json_ld(db, params),
+        "import_data_turtle" => import_data_turtle(db, params),
         _ => Err(mcp_error(-32601, "Method not found", json!({"tool": name}))),
     }
+}
+
+// ── Instance-data RDF tools (WS1) ─────────────────────────────────────────────
+//
+// Thin wrappers over sparrowdb_ontology_core::rdf_data. All logic lives in core;
+// these only marshal params and format the response.
+
+fn require_base_iri(args: &Value) -> Result<String, Value> {
+    args["base_iri"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            mcp_error(
+                -32602,
+                "Missing required param: base_iri",
+                json!({"detail": "base_iri is the namespace entity IRIs are minted under, \
+                                  e.g. 'https://example.org/kb'."}),
+            )
+        })
+}
+
+pub fn export_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+    let base_iri = require_base_iri(&args)?;
+
+    let (turtle, report) = sparrowdb_ontology_core::export_data_with_report(db, &base_iri)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
+
+    Ok(json!({
+        "content": [
+            {"type": "text", "text": turtle},
+            {"type": "text", "text": serde_json::to_string(&json!({
+                "entities_exported": report.entities_exported,
+                "relationships_exported": report.relationships_exported,
+                "triples_emitted": report.triples_emitted,
+                "orphan_properties": report.orphan_properties,
+                "orphan_labels": report.orphan_labels,
+                "orphan_relation_types": report.orphan_relation_types,
+                "dangling_edges": report.dangling_edges,
+                "issues": report.issues,
+            })).unwrap_or_default()}
+        ]
+    }))
+}
+
+pub fn export_data_json_ld(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+    let base_iri = require_base_iri(&args)?;
+
+    let doc = sparrowdb_ontology_core::export_data_json_ld(db, &base_iri)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
+
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| {
+        mcp_error(
+            -32603,
+            "serialization_error",
+            json!({"detail": e.to_string()}),
+        )
+    })?;
+    Ok(json!({ "content": [{"type": "text", "text": text}] }))
+}
+
+pub fn import_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+
+    let turtle = args["turtle"]
+        .as_str()
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: turtle", json!({})))?;
+
+    let strategy = match args["strategy"].as_str().unwrap_or("strict") {
+        "auto_declare" | "auto-declare" | "AutoDeclare" => {
+            sparrowdb_ontology_core::ImportStrategy::AutoDeclare
+        }
+        "strict" | "Strict" => sparrowdb_ontology_core::ImportStrategy::Strict,
+        other => {
+            return Err(mcp_error(
+                -32602,
+                "Invalid strategy",
+                json!({"detail": format!(
+                    "strategy must be 'strict' or 'auto_declare', got '{other}'"
+                )}),
+            ))
+        }
+    };
+
+    let report = sparrowdb_ontology_core::import_data_turtle(db, turtle, strategy)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data import failed", &e))?;
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(&report).unwrap_or_default()
+        }]
+    }))
 }
 
 // ── create_entity ─────────────────────────────────────────────────────────────

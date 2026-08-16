@@ -524,7 +524,7 @@ pub fn import_turtle(
 /// Only IRIs whose namespace is exactly `http://www.w3.org/2001/XMLSchema#` are
 /// considered XSD; anything else falls through to `"string"` to avoid false
 /// matches on custom IRIs that happen to share a suffix (e.g. `example.com/ns#int`).
-fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
+pub(crate) fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
     const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema#";
     let local = match xsd_iri.strip_prefix(XSD_NS) {
         Some(l) => l,
@@ -607,7 +607,7 @@ fn kv(pairs: &[(&str, StoreValue)]) -> std::collections::HashMap<String, StoreVa
 ///
 /// Uses `merge_node` which is idempotent: if a node with the same `symbol_id`
 /// already exists it is updated; no duplicate is created.
-fn write_class_node(
+pub(crate) fn write_class_node(
     db: &GraphDb,
     name: &str,
     description: &str,
@@ -634,7 +634,7 @@ fn write_class_node(
 
 /// Write (or overwrite) a `__SO_Relation` node. Optionally creates
 /// `__SO_DOMAIN` and `__SO_RANGE` edges if the target class nodes exist.
-fn write_relation_node(
+pub(crate) fn write_relation_node(
     db: &GraphDb,
     name: &str,
     description: &str,

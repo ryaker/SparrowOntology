@@ -313,3 +313,83 @@ Dry-run schema validation without writing.
 ```
 
 Use `validate` in agent planning phases before committing to a write sequence.
+
+---
+
+## Data — RDF (instance data)
+
+These export and import the *entities and relationships*, as opposed to
+`export_json_ld` / `import_turtle` which handle the *schema*. Full detail,
+including the datatype mapping table and IRI minting rules, is in
+[RDF Data Export](rdf-data-export.md).
+
+### `export_data_turtle`
+
+Export every entity and relationship as Turtle.
+
+**Parameters:**
+- `base_iri` (required): namespace entity IRIs are minted under, e.g. `https://example.org/kb`
+
+**Response:** two content blocks — the Turtle document, then a JSON report:
+
+```json
+{
+  "entities_exported": 2,
+  "relationships_exported": 1,
+  "triples_emitted": 6,
+  "orphan_properties": 0,
+  "orphan_labels": [],
+  "orphan_relation_types": [],
+  "dangling_edges": 0,
+  "issues": []
+}
+```
+
+Entities that carry a stored IRI from a previous import keep it; the rest are
+minted as `{base_iri}/{ClassName}/{node_id}`. Export is read-only.
+
+### `export_data_json_ld`
+
+The same graph in JSON-LD 1.1. The `@context` is derived from the ontology:
+relations become `"@type": "@id"` terms, and typed properties carry XSD datatype
+coercions.
+
+**Parameters:**
+- `base_iri` (required)
+
+### `import_data_turtle`
+
+Import instance data through the validated write path. The subject IRI is
+persisted on each entity, so a later export reproduces it rather than minting a
+new one.
+
+**Parameters:**
+- `turtle` (required): the Turtle instance-data text
+- `strategy` (optional, default `strict`): `strict` rejects unknown classes,
+  relations, and properties; `auto_declare` creates them, deriving property
+  types from XSD datatypes and relation domain/range from the observed classes
+
+**Response:**
+```json
+{
+  "entities_imported": 2,
+  "relationships_imported": 1,
+  "entities_skipped": 1,
+  "relationships_skipped": 0,
+  "blank_nodes_skipped": 0,
+  "classes_declared": 0,
+  "relations_declared": 0,
+  "properties_declared": 0,
+  "skips": [
+    {
+      "subject": "https://example.org/kb/Person/2",
+      "reason": "Unknown class <https://example.org/kb/schema/Wizard>. Valid: [\"Concept\", \"Organization\", \"Person\"]. Declare it with define_class, or re-run with ImportStrategy::AutoDeclare."
+    }
+  ],
+  "warnings": []
+}
+```
+
+Nothing is dropped silently — every skipped subject appears in `skips` with its
+IRI and an actionable reason. Blank nodes are counted and skipped (blank-node
+preservation is out of scope).

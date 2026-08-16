@@ -140,7 +140,7 @@ fn status_to_str(s: &SymbolStatus) -> &'static str {
     }
 }
 
-fn property_type_from_str(s: &str) -> PropertyType {
+pub(crate) fn property_type_from_str(s: &str) -> PropertyType {
     match s {
         "int64" => PropertyType::Int64,
         "float64" => PropertyType::Float64,
