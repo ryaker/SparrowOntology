@@ -763,18 +763,21 @@ fn collect_data_triples(
             else {
                 continue;
             };
-            // Deleting a node through Cypher `MATCH … DELETE` leaves its edges
-            // behind (SparrowDB 0.1.22), so an edge endpoint may name a node
-            // that no longer exists. Emitting a triple for it would assert
-            // facts about a deleted entity.
+            // Defensive: an edge endpoint may in principle name a node that no
+            // longer exists, and emitting a triple for it would assert facts
+            // about a deleted entity. Not currently reachable through the
+            // public API on SparrowDB 0.1.27+ — `DELETE` on an edge-bearing
+            // node is refused outright (`NodeHasEdges`, #436/PR #512) and
+            // `DETACH DELETE` removes a node and its edges atomically, with
+            // WAL replay applying each transaction's mutations all-or-nothing
+            // (see the `dangling_edges` tests in test_rdf_data.rs). Kept for
+            // a database created under an older SparrowDB, or a future
+            // storage-layer regression.
             let (Some(s), Some(o)) = (subject_by_id.get(src), subject_by_id.get(dst)) else {
                 report.dangling_edges += 1;
                 report.issues.push(ExportIssue {
                     subject: format!("{src} -[{rel}]-> {dst}"),
-                    reason: "Edge references a node that no longer exists; skipped. This is \
-                             left behind by `MATCH (n:Label) DELETE n`, which does not remove \
-                             incident edges."
-                        .to_string(),
+                    reason: "Edge references a node that no longer exists; skipped.".to_string(),
                 });
                 continue;
             };

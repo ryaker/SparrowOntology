@@ -1036,8 +1036,8 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb"
-version = "0.1.25"
-source = "git+https://github.com/ryaker/SparrowDB?branch=main#712ace45a737222b36b311408f1e0c84b8fd2d3e"
+version = "0.1.27"
+source = "git+https://github.com/ryaker/SparrowDB?branch=main#903ea739ea7a31157b25948656e222a3b82a79e1"
 dependencies = [
  "clap",
  "csv",
@@ -1055,8 +1055,8 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-catalog"
-version = "0.1.25"
-source = "git+https://github.com/ryaker/SparrowDB?branch=main#712ace45a737222b36b311408f1e0c84b8fd2d3e"
+version = "0.1.27"
+source = "git+https://github.com/ryaker/SparrowDB?branch=main#903ea739ea7a31157b25948656e222a3b82a79e1"
 dependencies = [
  "crc32fast",
  "sparrowdb-common",
@@ -1065,8 +1065,8 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-common"
-version = "0.1.25"
-source = "git+https://github.com/ryaker/SparrowDB?branch=main#712ace45a737222b36b311408f1e0c84b8fd2d3e"
+version = "0.1.27"
+source = "git+https://github.com/ryaker/SparrowDB?branch=main#903ea739ea7a31157b25948656e222a3b82a79e1"
 dependencies = [
  "crc32fast",
  "serde",
@@ -1074,8 +1074,8 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-cypher"
-version = "0.1.25"
-source = "git+https://github.com/ryaker/SparrowDB?branch=main#712ace45a737222b36b311408f1e0c84b8fd2d3e"
+version = "0.1.27"
+source = "git+https://github.com/ryaker/SparrowDB?branch=main#903ea739ea7a31157b25948656e222a3b82a79e1"
 dependencies = [
  "sparrowdb-catalog",
  "sparrowdb-common",
@@ -1083,8 +1083,8 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-execution"
-version = "0.1.25"
-source = "git+https://github.com/ryaker/SparrowDB?branch=main#712ace45a737222b36b311408f1e0c84b8fd2d3e"
+version = "0.1.27"
+source = "git+https://github.com/ryaker/SparrowDB?branch=main#903ea739ea7a31157b25948656e222a3b82a79e1"
 dependencies = [
  "bincode",
  "rayon",
@@ -1152,8 +1152,8 @@ dependencies = [
 
 [[package]]
 name = "sparrowdb-storage"
-version = "0.1.25"
-source = "git+https://github.com/ryaker/SparrowDB?branch=main#712ace45a737222b36b311408f1e0c84b8fd2d3e"
+version = "0.1.27"
+source = "git+https://github.com/ryaker/SparrowDB?branch=main#903ea739ea7a31157b25948656e222a3b82a79e1"
 dependencies = [
  "bincode",
  "chacha20poly1305",

@@ -594,13 +594,63 @@ fn orphan_property_is_reported_not_dropped() {
     assert!(issue.reason.contains("add_property"), "{}", issue.reason);
 }
 
-/// An edge whose endpoint no longer exists must not become a triple.
+/// `dangling_edges` in [`ExportReport`] guards against a node being removed
+/// while its edges survive it — which would otherwise let the exporter
+/// assert facts about a deleted entity. On SparrowDB through 0.1.25,
+/// `MATCH (n:Label) DELETE n` reached exactly that state: a packed `NodeId`
+/// was passed where the edge-detection lookup expected a slot, so the lookup
+/// silently found nothing and the delete proceeded, leaving `KNOWS`/`WORKS_FOR`
+/// edges pointing at a node that no longer existed.
 ///
-/// This is reachable on SparrowDB 0.1.22 because `MATCH (n:Label) DELETE n`
-/// removes nodes without removing their edges. Without the guard, the exporter
-/// would assert facts about deleted entities.
+/// SparrowDB 0.1.27 (`#436`, upstream PR #512) fixed the lookup itself: plain
+/// `DELETE` on a node with edges is now refused outright with
+/// `NodeHasEdges` — not a value change, a bug fix to a check that was always
+/// meant to fire — and `DETACH DELETE` removes the node and its edges
+/// atomically. Traced through SparrowDB's WAL replay
+/// (`sparrowdb-storage/src/wal/replay.rs`): mutations only replay for
+/// transactions with a matching `Begin`+`Commit` pair, so a transaction that
+/// fails the edge check (and therefore never reaches `Commit`) cannot leave a
+/// partial trace, and a successful `DETACH DELETE`'s node- and edge-removal
+/// mutations share one `txn_id` and replay together or not at all. So as of
+/// 0.1.27 this scenario is not constructible through the public API by any
+/// path — DELETE, DETACH DELETE, or crash/WAL-replay recovery.
+///
+/// The exporter's `dangling_edges` guard is kept regardless: it is cheap,
+/// and it still protects a database created under a pre-0.1.27 SparrowDB
+/// (whose on-disk state could already contain the inconsistency this test
+/// used to construct) or any future storage-layer regression. This test now
+/// asserts the *current* contract instead — DELETE is refused, DETACH DELETE
+/// is clean — rather than a bug that no longer exists.
 #[test]
-fn dangling_edges_are_skipped_and_reported() {
+fn delete_on_edge_bearing_node_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = GraphDb::open(dir.path()).unwrap();
+    declare_schema(&db);
+
+    let ada = node(&db, "Person", &[("name", sv("Ada Lovelace"))]);
+    let bob = node(&db, "Person", &[("name", sv("Bob Stone"))]);
+    edge(&db, ada, bob, "KNOWS");
+    db.checkpoint().unwrap();
+
+    let err = db.execute("MATCH (n:Person {name: 'Ada Lovelace'}) DELETE n");
+    assert!(
+        err.is_err(),
+        "DELETE on a node with edges must be refused, not silently leave them dangling"
+    );
+
+    // The refusal must be all-or-nothing: both nodes and the edge survive.
+    let (ttl, report) = export_data_with_report(&db, BASE).unwrap();
+    assert_eq!(report.entities_exported, 2, "{ttl}");
+    assert_eq!(report.relationships_exported, 1, "{ttl}");
+    assert_eq!(report.dangling_edges, 0, "{report:?}");
+    assert!(ttl.contains("KNOWS"), "{ttl}");
+}
+
+/// `DETACH DELETE` removes a node and its edges atomically — the export
+/// reflects a fully consistent graph afterward, with no orphaned/dangling
+/// triples for the removed relationships.
+#[test]
+fn detach_delete_leaves_a_consistent_export() {
     let dir = tempfile::tempdir().unwrap();
     let db = GraphDb::open(dir.path()).unwrap();
     declare_schema(&db);
@@ -621,20 +671,22 @@ fn dangling_edges_are_skipped_and_reported() {
         8
     );
 
-    // Delete both Person nodes. Their KNOWS and WORKS_FOR edges survive.
-    db.execute("MATCH (n:Person) DELETE n").unwrap();
+    db.execute("MATCH (n:Person {name: 'Ada Lovelace'}) DETACH DELETE n")
+        .unwrap();
     db.checkpoint().unwrap();
 
     let (ttl, report) = export_data_with_report(&db, BASE).unwrap();
 
-    // Only Acme remains: 1 rdf:type + 1 name = 2 triples.
-    assert_eq!(report.entities_exported, 1, "{ttl}");
-    assert_eq!(report.triples_emitted, 2, "{ttl}");
-    // KNOWS (Ada->Bob) and WORKS_FOR (Ada->Acme) both lost their source.
-    assert_eq!(report.dangling_edges, 2, "{report:?}");
+    // Bob and Acme remain: 2 rdf:type + 2 name = 4 triples. No dangling edges
+    // — DETACH DELETE took KNOWS and WORKS_FOR with it.
+    assert_eq!(report.entities_exported, 2, "{ttl}");
+    assert_eq!(report.triples_emitted, 4, "{ttl}");
+    assert_eq!(report.dangling_edges, 0, "{report:?}");
     assert_eq!(report.relationships_exported, 0);
     assert!(!ttl.contains("KNOWS"));
     assert!(!ttl.contains("WORKS_FOR"));
+    assert!(ttl.contains("Bob Stone"), "{ttl}");
+    assert!(ttl.contains("Acme Corp"), "{ttl}");
 }
 
 /// A node whose subject IRI cannot be parsed (here: a stored `__so_iri` with
