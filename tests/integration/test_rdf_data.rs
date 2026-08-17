@@ -634,8 +634,8 @@ fn delete_on_edge_bearing_node_is_refused() {
 
     let err = db.execute("MATCH (n:Person {name: 'Ada Lovelace'}) DELETE n");
     assert!(
-        err.is_err(),
-        "DELETE on a node with edges must be refused, not silently leave them dangling"
+        matches!(err, Err(sparrowdb::Error::NodeHasEdges { .. })),
+        "expected NodeHasEdges, got: {err:?}"
     );
 
     // The refusal must be all-or-nothing: both nodes and the edge survive.
