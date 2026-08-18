@@ -82,6 +82,11 @@ impl Default for ImportOptions {
 }
 
 /// Summary of what was imported.
+///
+/// Breaking change: the `dropped_property_comments` field (present when
+/// `add_property` had no `description` parameter) was removed — comments are
+/// now persisted directly via `add_property`'s `description`/`source_iri`
+/// params instead of being reported back for the caller to store separately.
 #[derive(Debug, Default)]
 pub struct ImportSummary {
     pub classes_imported: usize,
