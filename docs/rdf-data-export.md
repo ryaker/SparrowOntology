@@ -213,15 +213,21 @@ the cross-check as skipped rather than passing silently.
 
 ## Engine caveats
 
-Two SparrowDB 0.1.22 behaviours affect this layer:
+As of SparrowDB 0.1.27 (the version this crate pins), the engine refuses to
+create dangling edges rather than leaving them behind:
 
-- `MATCH (n:Label) DELETE n` removes nodes but leaves their edges behind. The
-  resulting dangling edges survive `checkpoint()` and reopen. The exporter
-  **skips** edges whose endpoints no longer exist and counts them in
-  `ExportReport::dangling_edges` — without that guard it would assert facts about
-  deleted entities.
-- `DETACH DELETE` fails outright with
-  `relationship type '__SO_HAS_PROPERTY' not found in catalog`.
+- `MATCH (n:Label) DELETE n` on a node with edges is refused outright
+  (`NodeHasEdges`) instead of silently removing the node and leaving its edges
+  behind.
+- `DETACH DELETE` removes the node and its edges atomically.
+
+Both were bugs on SparrowDB 0.1.22 and earlier — `DELETE` left dangling edges,
+and `DETACH DELETE` failed outright with `relationship type
+'__SO_HAS_PROPERTY' not found in catalog`. Neither is reachable through this
+crate's supported engine version, but the exporter still **skips** edges
+whose endpoints no longer exist and counts them in
+`ExportReport::dangling_edges`, as defense-in-depth for a database written by
+an older engine.
 
 To wipe instance data reliably today, create a fresh database and replay the
 schema rather than deleting in place.

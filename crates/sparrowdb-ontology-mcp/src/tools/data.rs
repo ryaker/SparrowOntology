@@ -324,11 +324,24 @@ pub fn import_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, 
     let report = sparrowdb_ontology_core::import_data_turtle(db, turtle, strategy)
         .map_err(|e| so_error_to_mcp_error(-32603, "Data import failed", &e))?;
 
+    // A `Result::Ok` here only means the import call didn't hard-fail — the
+    // CLI's `cmd_import_data` treats any skip as a pipeline-gate failure
+    // (`{skipped_total} item(s) were not imported`), and MCP callers need the
+    // same signal. Without `isError`, a strict-mode import where every
+    // subject is an unknown class returns a clean-looking success: the
+    // dispatcher in main.rs only sets `isError` on a hard `Err`, and this
+    // handler always returned `Ok`, so a client that checks `isError` before
+    // parsing content (the documented MCP pattern) would see success on an
+    // import that imported nothing.
+    let skipped_total =
+        report.entities_skipped + report.relationships_skipped + report.blank_nodes_skipped;
+
     Ok(json!({
         "content": [{
             "type": "text",
             "text": serde_json::to_string(&report).unwrap_or_default()
-        }]
+        }],
+        "isError": skipped_total > 0
     }))
 }
 

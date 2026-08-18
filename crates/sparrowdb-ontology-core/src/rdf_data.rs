@@ -97,7 +97,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use oxrdf::{Literal, NamedNode, Term, Triple};
 use serde_json::{json, Map as JsMap, Value as JsVal};
-use sparrowdb::GraphDb;
+use sparrowdb::{GraphDb, ReadTx};
 use sparrowdb_common::NodeId;
 use sparrowdb_execution::Value as ExecValue;
 use sparrowdb_storage::node_store::Value as StoreValue;
@@ -528,9 +528,10 @@ fn invalid(msg: String) -> SoError {
     SoError::Storage(sparrowdb_common::Error::InvalidArgument(msg))
 }
 
-/// Run a query, treating "unknown label"/"unknown relationship type" as empty.
-fn execute_or_empty(db: &GraphDb, q: &str) -> Result<sparrowdb_execution::QueryResult, SoError> {
-    match db.execute(q) {
+/// Run a query against a pinned snapshot, treating "unknown label"/"unknown
+/// relationship type" as empty.
+fn execute_or_empty(tx: &ReadTx, q: &str) -> Result<sparrowdb_execution::QueryResult, SoError> {
+    match tx.query(q) {
         Ok(r) => Ok(r),
         Err(sparrowdb_common::Error::InvalidArgument(ref msg))
             if msg.contains("unknown label") || msg.contains("unknown relationship type") =>
@@ -546,6 +547,17 @@ fn execute_or_empty(db: &GraphDb, q: &str) -> Result<sparrowdb_execution::QueryR
 /// Triples are keyed by their N-Triples form in a `BTreeMap`, which dedupes
 /// (RDF graphs are sets — a duplicate edge in storage must not become a
 /// duplicate triple) and yields a stable order across runs.
+///
+/// ## Snapshot isolation
+///
+/// The entity pass and the relationship pass each issue one query per
+/// label/relation-type. Without a shared snapshot, a write committed between
+/// those queries could be visible to one pass and not the other — e.g. a node
+/// created after the entity pass scanned its label, then linked by an edge the
+/// relationship pass *does* see. `subject_by_id` would have no entry for that
+/// node, and the edge would be misreported as dangling even though it is live.
+/// Pinning one [`ReadTx`] for the whole traversal makes every query in this
+/// function see the same committed state, so that race cannot occur.
 fn collect_data_triples(
     db: &GraphDb,
     base_iri: &str,
@@ -553,6 +565,7 @@ fn collect_data_triples(
     let base = normalize_base(base_iri);
     let snap = export_schema(db)?;
     let idx = SchemaIndex::build(&snap, &base);
+    let tx = db.begin_read().map_err(SoError::Storage)?;
 
     let mut report = ExportReport::default();
     let mut out: BTreeMap<String, Triple> = BTreeMap::new();
@@ -617,7 +630,7 @@ fn collect_data_triples(
             }
         };
         let q = format!("MATCH (n:{quoted_label}) RETURN id(n), n");
-        let result = execute_or_empty(db, &q)?;
+        let result = execute_or_empty(&tx, &q)?;
         for row in &result.rows {
             let Some(ExecValue::Int64(node_id)) = row.first() else {
                 continue;
@@ -756,7 +769,7 @@ fn collect_data_triples(
             }
         };
         let q = format!("MATCH (a)-[r:{quoted_rel}]->(b) RETURN id(a), id(b)");
-        let result = execute_or_empty(db, &q)?;
+        let result = execute_or_empty(&tx, &q)?;
         for row in &result.rows {
             let (Some(ExecValue::Int64(src)), Some(ExecValue::Int64(dst))) =
                 (row.first(), row.get(1))
@@ -1178,7 +1191,14 @@ pub fn import_data_turtle(
     // entire import over data that was already handled correctly.
     if strategy == ImportStrategy::AutoDeclare {
         let mut added = false;
-        let mut declared_this_pass: HashSet<(String, String)> = HashSet::new();
+        // Maps (class, resolved name) -> the first predicate IRI that
+        // declared it this pass. A second, distinct predicate resolving to
+        // the same name (two IRIs sharing a local name, both falling back to
+        // `local_name`) would otherwise be silently dropped — declared_this_pass
+        // being a plain set of (class, name) can't tell "already declared by
+        // this exact predicate" from "declared by a colliding one", so it
+        // swallows the second predicate with no report entry.
+        let mut declared_this_pass: HashMap<(String, String), String> = HashMap::new();
         for (iri, data) in &subjects {
             let Some(class) = class_of.get(iri) else {
                 continue;
@@ -1194,12 +1214,22 @@ pub fn import_data_turtle(
                     .get(class)
                     .map(|m| m.contains_key(&name))
                     .unwrap_or(false);
-                if declared
-                    || name.starts_with("__so_")
-                    || !declared_this_pass.insert((class.clone(), name.clone()))
-                {
+                if declared || name.starts_with("__so_") {
                     continue;
                 }
+                let key = (class.clone(), name.clone());
+                if let Some(prior_pred) = declared_this_pass.get(&key) {
+                    if prior_pred != pred {
+                        report.warnings.push(format!(
+                            "Subject <{iri}>: predicates <{prior_pred}> and <{pred}> both \
+                             resolve to property name '{name}' on class '{class}'; only \
+                             <{prior_pred}> was auto-declared as its source_iri. Declare \
+                             <{pred}> explicitly with a distinct property name to keep both."
+                        ));
+                    }
+                    continue;
+                }
+                declared_this_pass.insert(key, pred.clone());
                 let ty = xsd_to_type_str(lit.datatype().as_str());
                 match crate::init::add_property(
                     db,
@@ -1282,6 +1312,12 @@ pub fn import_data_turtle(
         let declared = idx.props_by_name.get(class).unwrap_or(&empty);
 
         let mut props: HashMap<String, PropertyValue> = HashMap::new();
+        // Tracks which predicate IRI first populated each resolved property
+        // name, so a second, distinct predicate that resolves to the same
+        // name (e.g. two IRIs sharing a local name, both falling back to
+        // `local_name`) is reported instead of silently overwriting the
+        // first value.
+        let mut name_source: HashMap<String, String> = HashMap::new();
         let mut failed: Option<String> = None;
 
         for (pred, lit) in &data.literals {
@@ -1301,6 +1337,18 @@ pub fn import_data_turtle(
             };
             match literal_to_property_value(&prop.datatype, lit) {
                 Ok(v) => {
+                    if let Some(prior_pred) = name_source.get(&name) {
+                        if prior_pred != pred {
+                            report.warnings.push(format!(
+                                "Subject <{iri}>: predicates <{prior_pred}> and <{pred}> both \
+                                 resolve to property '{name}' on class '{class}'; the value \
+                                 from <{pred}> was kept and <{prior_pred}>'s was discarded. \
+                                 Give one of them an explicit source_iri-registered property to \
+                                 disambiguate."
+                            ));
+                        }
+                    }
+                    name_source.insert(name.clone(), pred.clone());
                     props.insert(name, v);
                 }
                 Err(e) => {
