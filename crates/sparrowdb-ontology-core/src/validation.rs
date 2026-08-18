@@ -163,7 +163,7 @@ pub fn validate(db: &GraphDb) -> Result<ValidationReport, SoError> {
 }
 
 /// Provenance properties that callers ARE allowed to set.
-const ALLOWED_SO_KEYS: &[&str] = &["__so_source_label", "__so_source_rel"];
+const ALLOWED_SO_KEYS: &[&str] = &["__so_source_label", "__so_source_rel", "__so_iri"];
 
 // ── ValidationContext ─────────────────────────────────────────────────────────
 
@@ -390,6 +390,8 @@ impl<'a> ValidationContext<'a> {
                 owner_kind: crate::model::OwnerKind::Class,
                 created_at: 0,
                 owner_name: String::new(),
+                description: None,
+                source_iri: None,
             });
         }
         Ok(props)

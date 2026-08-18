@@ -565,6 +565,40 @@ fn tool_list() -> Value {
                     },
                     "required": ["turtle"]
                 }
+            },
+            {
+                "name": "export_data_turtle",
+                "description": "Export the instance data (entities and relationships, not the schema) as Turtle. Each entity becomes a subject IRI, rdf:type comes from its ontology class, properties become typed literals with XSD datatypes derived from the ontology, and relationships become object properties. Returns the Turtle plus a report of anything that could not be represented (undeclared columns, unknown labels, dangling edges).",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "base_iri": {"type": "string", "description": "Namespace entity IRIs are minted under, e.g. 'https://example.org/kb'. Entities that carry a stored IRI from a previous import keep it."}
+                    },
+                    "required": ["base_iri"]
+                }
+            },
+            {
+                "name": "export_data_json_ld",
+                "description": "Export the instance data as JSON-LD 1.1. Same graph as export_data_turtle, with an @context derived from the ontology: relations become @id terms and typed properties carry XSD datatype coercions.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "base_iri": {"type": "string", "description": "Namespace entity IRIs are minted under, e.g. 'https://example.org/kb'."}
+                    },
+                    "required": ["base_iri"]
+                }
+            },
+            {
+                "name": "import_data_turtle",
+                "description": "Import instance data from Turtle. Subjects whose rdf:type matches a known class become entities via the validated write path; the subject IRI is persisted so a later export reproduces it. Nothing is dropped silently — every skipped subject is reported with its IRI and an actionable reason. Blank nodes are flagged and skipped.",
+                "inputSchema": {
+                    "type": "object",
+                    "properties": {
+                        "turtle": {"type": "string", "description": "The Turtle instance-data text to import"},
+                        "strategy": {"type": "string", "enum": ["strict", "auto_declare"], "description": "'strict' (default) rejects unknown classes, relations, and properties and reports them. 'auto_declare' declares them on the fly, deriving property types from XSD datatypes and relation domain/range from the observed subject and object classes.", "default": "strict"}
+                    },
+                    "required": ["turtle"]
+                }
             }
         ]
     })

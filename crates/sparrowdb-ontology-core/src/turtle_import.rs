@@ -93,10 +93,6 @@ pub struct ImportSummary {
     /// Names of `owl:DatatypeProperty` terms that were skipped because they
     /// had no resolvable `rdfs:domain`.
     pub skipped_no_domain_properties: Vec<String>,
-    /// `(property_name, comment)` pairs for `owl:DatatypeProperty` terms whose
-    /// `rdfs:comment` could not be persisted because `add_property` has no
-    /// description parameter.  Callers may surface or store these separately.
-    pub dropped_property_comments: Vec<(String, String)>,
 }
 
 // ── Main entry point ──────────────────────────────────────────────────────────
@@ -307,12 +303,13 @@ pub fn import_turtle(
     let mut aliases_imported: usize = 0;
     let mut properties_imported: usize = 0;
     let mut skipped_no_domain_properties: Vec<String> = Vec::new();
-    let mut dropped_property_comments: Vec<(String, String)> = Vec::new();
 
     // Pre-build (owner_name, prop_name) → PropertyType map for type-drift checks on
     // DuplicateProperty.  Built once here to avoid re-querying the schema on every
     // duplicate hit.  Storage failures are fatal and propagated immediately.
-    let existing_props: HashMap<(String, String), PropertyType> = if data_prop_iris.is_empty() {
+    // Kept mutable so successful same-batch insertions are visible to subsequent
+    // duplicate checks within the same import run.
+    let mut existing_props: HashMap<(String, String), PropertyType> = if data_prop_iris.is_empty() {
         HashMap::new()
     } else {
         export_schema(db)?
@@ -436,21 +433,35 @@ pub fn import_turtle(
             .map(|xsd_iri| xsd_to_type_str(xsd_iri))
             .unwrap_or("string");
 
-        // Carry rdfs:comment into ImportSummary for callers to handle.
-        // add_property has no description parameter today; tracked in issue #39.
-        if let Some(comment) = comments.get(iri) {
-            if !comment.is_empty() {
-                dropped_property_comments.push((name.clone(), comment.clone()));
-            }
-        }
+        let prop_description = comments
+            .get(iri)
+            .filter(|s| !s.is_empty())
+            .map(String::as_str);
+        let prop_iri = Some(iri.as_str());
+
+        // Resolve incoming type once — used in both the success and duplicate paths.
+        let incoming_type = crate::init::parse_property_type_str(type_str);
 
         // Import property on each domain class
         for owner in &domain_names {
-            match add_property(db, owner, &name, type_str, false, false, None) {
-                Ok(_) => properties_imported += 1,
+            match add_property(
+                db,
+                owner,
+                &name,
+                type_str,
+                false,
+                false,
+                None,
+                prop_description,
+                prop_iri,
+            ) {
+                Ok(_) => {
+                    properties_imported += 1;
+                    // Update cache so subsequent same-batch duplicates see this insertion.
+                    existing_props.insert((owner.clone(), name.clone()), incoming_type.clone());
+                }
                 Err(SoError::DuplicateProperty { .. }) => {
-                    // Check for type drift using the pre-built cache.
-                    let incoming_type = xsd_str_to_property_type(type_str);
+                    // Check for type drift using the cache (pre-import DB state + same-batch inserts).
                     if let Some(existing_type) = existing_props.get(&(owner.clone(), name.clone()))
                     {
                         if existing_type != &incoming_type {
@@ -503,32 +514,17 @@ pub fn import_turtle(
         properties_imported,
         warnings,
         skipped_no_domain_properties,
-        dropped_property_comments,
     })
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-
-/// Convert a Sparrow type string (as returned by `xsd_to_type_str`) to a `PropertyType` variant.
-///
-/// Mirrors the mapping in `init::parse_property_type_str`.
-fn xsd_str_to_property_type(s: &str) -> PropertyType {
-    match s {
-        "int64" => PropertyType::Int64,
-        "float64" => PropertyType::Float64,
-        "bool" => PropertyType::Bool,
-        "date" => PropertyType::Date,
-        "variant" => PropertyType::Variant,
-        _ => PropertyType::String,
-    }
-}
 
 /// Map an XSD datatype IRI to a Sparrow property type string.
 ///
 /// Only IRIs whose namespace is exactly `http://www.w3.org/2001/XMLSchema#` are
 /// considered XSD; anything else falls through to `"string"` to avoid false
 /// matches on custom IRIs that happen to share a suffix (e.g. `example.com/ns#int`).
-fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
+pub(crate) fn xsd_to_type_str(xsd_iri: &str) -> &'static str {
     const XSD_NS: &str = "http://www.w3.org/2001/XMLSchema#";
     let local = match xsd_iri.strip_prefix(XSD_NS) {
         Some(l) => l,
@@ -611,7 +607,7 @@ fn kv(pairs: &[(&str, StoreValue)]) -> std::collections::HashMap<String, StoreVa
 ///
 /// Uses `merge_node` which is idempotent: if a node with the same `symbol_id`
 /// already exists it is updated; no duplicate is created.
-fn write_class_node(
+pub(crate) fn write_class_node(
     db: &GraphDb,
     name: &str,
     description: &str,
@@ -638,7 +634,7 @@ fn write_class_node(
 
 /// Write (or overwrite) a `__SO_Relation` node. Optionally creates
 /// `__SO_DOMAIN` and `__SO_RANGE` edges if the target class nodes exist.
-fn write_relation_node(
+pub(crate) fn write_relation_node(
     db: &GraphDb,
     name: &str,
     description: &str,

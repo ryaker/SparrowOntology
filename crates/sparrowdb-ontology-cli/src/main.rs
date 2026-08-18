@@ -6,7 +6,8 @@ use clap::{Parser, Subcommand};
 use serde_json::{json, Value};
 use sparrowdb::GraphDb;
 use sparrowdb_ontology_core::{
-    export_json_ld, import_records, import_turtle, init, DomainRangeStrategy, ImportOptions,
+    export_data_json_ld, export_data_with_report, export_json_ld, import_data_turtle,
+    import_records, import_turtle, init, DomainRangeStrategy, ImportOptions, ImportStrategy,
     ImportTemplate, StarterKind,
 };
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
@@ -202,6 +203,30 @@ enum Commands {
         #[arg(long, default_value = "unconstrained")]
         strategy: String,
     },
+    /// Export instance data (entities and relationships) as RDF
+    ExportData {
+        #[arg(long)]
+        db: PathBuf,
+        /// Output format
+        #[arg(long, default_value = "ttl", value_parser = ["ttl", "jsonld"])]
+        format: String,
+        /// Base IRI that entity IRIs are minted under, e.g. https://example.org/kb
+        #[arg(long)]
+        base: String,
+        /// Write output to this file path (default: stdout)
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Import instance data from a Turtle (.ttl) file
+    ImportData {
+        /// Path to the Turtle file to import
+        file: PathBuf,
+        #[arg(long)]
+        db: PathBuf,
+        /// 'strict' rejects unknown classes/relations/properties; 'auto-declare' creates them
+        #[arg(long, default_value = "strict", value_parser = ["strict", "auto-declare"])]
+        strategy: String,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -274,6 +299,13 @@ fn run(cli: Cli) -> Result<(), String> {
             base_iri,
             strategy,
         } => cmd_import_turtle(&db, &file, base_iri, &strategy),
+        Commands::ExportData {
+            db,
+            format,
+            base,
+            out,
+        } => cmd_export_data(&db, &format, &base, out.as_deref()),
+        Commands::ImportData { file, db, strategy } => cmd_import_data(&db, &file, &strategy),
     }
 }
 
@@ -774,17 +806,137 @@ fn cmd_import_turtle(
         "  Skipped (no domain): {}",
         summary.skipped_no_domain_properties.len()
     );
-    if !summary.dropped_property_comments.is_empty() {
-        println!(
-            "  Comments not stored (no add_property API): {}",
-            summary.dropped_property_comments.len()
-        );
-    }
     if !summary.warnings.is_empty() {
         println!("Warnings ({}):", summary.warnings.len());
         for w in &summary.warnings {
             println!("  - {w}");
         }
+    }
+    Ok(())
+}
+
+// ── Instance-data RDF (WS1) ───────────────────────────────────────────────────
+
+/// Export entities and relationships as RDF.
+///
+/// The graph goes to stdout (or `--out`); the report of anything that could not
+/// be represented goes to stderr, so `--out` stays a clean RDF file and a
+/// stdout pipe stays parseable.
+fn cmd_export_data(
+    db_path: &Path,
+    format: &str,
+    base: &str,
+    out: Option<&Path>,
+) -> Result<(), String> {
+    let db = open_db(db_path)?;
+
+    let (text, report) = match format {
+        "jsonld" => {
+            let doc = export_data_json_ld(&db, base).map_err(|e| format!("Error: {e}"))?;
+            let s = serde_json::to_string_pretty(&doc).map_err(|e| format!("Error: {e}"))?;
+            // Re-run for the report; the export itself is read-only.
+            let (_, report) =
+                export_data_with_report(&db, base).map_err(|e| format!("Error: {e}"))?;
+            (s, report)
+        }
+        _ => export_data_with_report(&db, base).map_err(|e| format!("Error: {e}"))?,
+    };
+
+    match out {
+        Some(path) => {
+            std::fs::write(path, &text)
+                .map_err(|e| format!("Error: cannot write {}: {e}", path.display()))?;
+            eprintln!("Wrote {} ({} bytes)", path.display(), text.len());
+        }
+        None => println!("{text}"),
+    }
+
+    eprintln!("Export complete:");
+    eprintln!("  Entities:      {}", report.entities_exported);
+    eprintln!("  Relationships: {}", report.relationships_exported);
+    eprintln!("  Triples:       {}", report.triples_emitted);
+    if report.orphan_properties > 0 {
+        eprintln!("  Undeclared columns skipped: {}", report.orphan_properties);
+    }
+    if report.dangling_edges > 0 {
+        eprintln!("  Dangling edges skipped:     {}", report.dangling_edges);
+    }
+    if !report.orphan_labels.is_empty() {
+        eprintln!(
+            "  Unknown labels skipped:     {}",
+            report.orphan_labels.len()
+        );
+    }
+    if !report.orphan_relation_types.is_empty() {
+        eprintln!(
+            "  Unknown relations skipped:  {}",
+            report.orphan_relation_types.len()
+        );
+    }
+    if report.unrepresentable_iris > 0 {
+        eprintln!(
+            "  Unrepresentable IRIs skipped: {}",
+            report.unrepresentable_iris
+        );
+    }
+    if !report.issues.is_empty() {
+        eprintln!("Issues ({}):", report.issues.len());
+        for issue in &report.issues {
+            eprintln!("  <{}>: {}", issue.subject, issue.reason);
+        }
+    }
+    Ok(())
+}
+
+/// Import entities and relationships from Turtle.
+///
+/// Exits nonzero if anything was skipped, so the command is usable as a gate in
+/// a pipeline.
+fn cmd_import_data(db_path: &Path, file: &Path, strategy: &str) -> Result<(), String> {
+    let ttl = std::fs::read_to_string(file)
+        .map_err(|e| format!("Error: cannot read file {}: {e}", file.display()))?;
+    let db = open_db(db_path)?;
+
+    let strategy = match strategy {
+        "auto-declare" => ImportStrategy::AutoDeclare,
+        _ => ImportStrategy::Strict,
+    };
+
+    let report = import_data_turtle(&db, &ttl, strategy).map_err(|e| format!("Error: {e}"))?;
+
+    println!("Import complete:");
+    println!("  Entities imported:      {}", report.entities_imported);
+    println!(
+        "  Relationships imported: {}",
+        report.relationships_imported
+    );
+    if report.classes_declared + report.relations_declared + report.properties_declared > 0 {
+        println!(
+            "  Declared: {} classes, {} relations, {} properties",
+            report.classes_declared, report.relations_declared, report.properties_declared
+        );
+    }
+    if report.blank_nodes_skipped > 0 {
+        println!(
+            "  Blank nodes skipped:    {} (blank-node preservation is out of scope)",
+            report.blank_nodes_skipped
+        );
+    }
+    for w in &report.warnings {
+        println!("  warning: {w}");
+    }
+
+    let skipped = report.entities_skipped + report.relationships_skipped;
+    let skipped_total = skipped + report.blank_nodes_skipped;
+    if skipped_total > 0 {
+        println!(
+            "  Skipped: {} entities, {} relationships",
+            report.entities_skipped, report.relationships_skipped
+        );
+        for s in &report.skips {
+            println!("    <{}>: {}", s.subject, s.reason);
+        }
+        return Err(format!("{skipped_total} item(s) were not imported"));
     }
     Ok(())
 }

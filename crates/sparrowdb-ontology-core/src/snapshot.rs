@@ -140,7 +140,7 @@ fn status_to_str(s: &SymbolStatus) -> &'static str {
     }
 }
 
-fn property_type_from_str(s: &str) -> PropertyType {
+pub(crate) fn property_type_from_str(s: &str) -> PropertyType {
     match s {
         "int64" => PropertyType::Int64,
         "float64" => PropertyType::Float64,
@@ -321,7 +321,8 @@ fn export_properties(
     let q = format!(
         "MATCH (p:{PROPERTY_LABEL}) \
          RETURN p.symbol_id, p.name, p.datatype, p.required, p.unique, \
-                p.enum_values, p.owner_symbol_id, p.owner_kind, p.created_at"
+                p.enum_values, p.owner_symbol_id, p.owner_kind, p.created_at, \
+                p.description, p.source_iri"
     );
     let result = match db.execute(&q) {
         Ok(r) => r,
@@ -351,6 +352,8 @@ fn export_properties(
         let owner_symbol_id = str_val(&row[6]);
         let owner_kind_str = str_val(&row[7]);
         let created_at = i64_val(&row[8]);
+        let description = row.get(9).and_then(opt_str_val);
+        let source_iri = row.get(10).and_then(opt_str_val);
         let owner_name = class_name_by_sid
             .get(&owner_symbol_id)
             .cloned()
@@ -372,6 +375,8 @@ fn export_properties(
             owner_kind,
             created_at,
             owner_name,
+            description,
+            source_iri,
         });
     }
     Ok(out)

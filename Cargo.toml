@@ -2,4 +2,32 @@
 members = ["crates/sparrowdb-ontology-core", "crates/sparrowdb-ontology-mcp", "crates/sparrowdb-ontology-cli"]
 resolver = "2"
 
-
+# ── SparrowDB engine override ────────────────────────────────────────────────
+#
+# WS1 (instance-data RDF export) requires engine fixes that are on SparrowDB
+# `main` but are NOT in any published release. In particular the duplicate-edge
+# bug present through crates.io 0.1.22 would make `export_data_turtle` emit
+# duplicate RDF triples for a single relationship.
+#
+# The previous override pointed at an absolute local path
+# (/Users/ryaker/Dev/SparrowDB), which only builds on one machine. A git source
+# builds anywhere, including CI, and Cargo.lock pins the exact rev that was
+# tested.
+#
+# Pinned to an explicit `rev`, not `branch = "main"`: SparrowDB's main moves
+# fast (engine-semantics changes included), so a branch reference is not a
+# stable input — any `cargo update` would silently float to whatever main is
+# at that moment. Bump this rev deliberately, verify against it, then update
+# Cargo.lock in the same commit.
+#
+# NOTE FOR RELEASE: crates.io forbids git dependencies in *published* crates.
+# SparrowOntology is not publishing yet, but 0.1.23 (the last version this
+# comment used to suggest) predates the duplicate-edge and dangling-edge
+# fixes this pin exists for — this block must be replaced with a plain
+# version requirement of >= whatever release actually contains PR #512
+# and the duplicate-edge fix, once one is cut.
+[patch.crates-io]
+sparrowdb           = { git = "https://github.com/ryaker/SparrowDB", rev = "903ea739ea7a31157b25948656e222a3b82a79e1" }
+sparrowdb-execution = { git = "https://github.com/ryaker/SparrowDB", rev = "903ea739ea7a31157b25948656e222a3b82a79e1" }
+sparrowdb-common    = { git = "https://github.com/ryaker/SparrowDB", rev = "903ea739ea7a31157b25948656e222a3b82a79e1" }
+sparrowdb-storage   = { git = "https://github.com/ryaker/SparrowDB", rev = "903ea739ea7a31157b25948656e222a3b82a79e1" }

@@ -25,3 +25,11 @@ pub const RANGE_REL: &str = "__SO_RANGE";
 pub const SOURCE_LABEL_KEY: &str = "__so_source_label";
 /// Allowed on user edges when preserve_source_terms=true and was_alias=true.
 pub const SOURCE_REL_KEY: &str = "__so_source_rel";
+
+/// The RDF subject IRI an entity was imported under.
+///
+/// Set by `rdf_data::import_data_turtle` and preferred over IRI minting by
+/// `rdf_data::export_data_turtle`, so that export → wipe → import → re-export
+/// reproduces the same subject IRIs instead of re-minting them from freshly
+/// assigned node ids.
+pub const SOURCE_IRI_KEY: &str = "__so_iri";

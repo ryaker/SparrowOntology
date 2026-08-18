@@ -510,6 +510,7 @@ ex:Person a owl:Class ;
 
 ex:age a owl:DatatypeProperty ;
     rdfs:label "age" ;
+    rdfs:comment "Age in years." ;
     rdfs:domain ex:Person ;
     rdfs:range xsd:integer .
 
@@ -570,6 +571,22 @@ fn datatype_properties_imported_as_add_property() {
     assert!(names.contains(&"score"), "missing 'score'");
     assert!(names.contains(&"active"), "missing 'active'");
     assert!(names.contains(&"joinedAt"), "missing 'joinedAt'");
+
+    // Verify the new metadata fields are persisted through the import → export round-trip.
+    let age_prop = person_props
+        .iter()
+        .find(|p| p.name == "age")
+        .expect("'age' property must exist");
+    assert_eq!(
+        age_prop.description.as_deref(),
+        Some("Age in years."),
+        "rdfs:comment must be stored as description"
+    );
+    assert_eq!(
+        age_prop.source_iri.as_deref(),
+        Some("https://example.org/age"),
+        "source IRI must be stored from owl:DatatypeProperty IRI"
+    );
 }
 
 // ══════════════════════════════════════════════════════════════════════════════

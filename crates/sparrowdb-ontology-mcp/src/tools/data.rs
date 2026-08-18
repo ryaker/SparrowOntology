@@ -11,7 +11,7 @@ use sparrowdb_ontology_core::namespace::{
     ALIAS_LABEL, ALIAS_OF_REL, CLASS_LABEL, DOMAIN_REL, HAS_PROPERTY_REL, PROPERTY_LABEL,
     RANGE_REL, RELATION_LABEL, SUBCLASS_OF_REL, SUBPROPERTY_OF_REL,
 };
-use sparrowdb_ontology_core::{resolve, ValidationContext};
+use sparrowdb_ontology_core::{property_value_to_store, resolve, ValidationContext};
 use sparrowdb_storage::node_store::Value as StoreValue;
 
 use crate::error::{mcp_error, so_error_to_mcp, so_error_to_mcp_error};
@@ -181,21 +181,6 @@ fn json_to_property_value(v: &Value) -> PropertyValue {
     }
 }
 
-// ── PropertyValue → StoreValue ────────────────────────────────────────────────
-
-fn property_value_to_store(v: &PropertyValue) -> Option<StoreValue> {
-    match v {
-        PropertyValue::String(s) => Some(StoreValue::Bytes(s.as_bytes().to_vec())),
-        PropertyValue::Int64(n) => Some(StoreValue::Int64(*n)),
-        PropertyValue::Float64(f) => {
-            // Store floats as bytes (string representation) since StoreValue may not have Float64
-            Some(StoreValue::Bytes(f.to_string().as_bytes().to_vec()))
-        }
-        PropertyValue::Bool(b) => Some(StoreValue::Int64(if *b { 1 } else { 0 })),
-        PropertyValue::Null => None,
-    }
-}
-
 fn props_to_store(props: &HashMap<String, PropertyValue>) -> HashMap<String, StoreValue> {
     props
         .iter()
@@ -240,8 +225,124 @@ pub fn dispatch(db: &GraphDb, name: &str, params: Option<Value>) -> Result<Value
         "find_entities" => find_entities(db, params),
         "explain_symbol" => explain_symbol(db, params),
         "validate" => validate(db, params),
+        "export_data_turtle" => export_data_turtle(db, params),
+        "export_data_json_ld" => export_data_json_ld(db, params),
+        "import_data_turtle" => import_data_turtle(db, params),
         _ => Err(mcp_error(-32601, "Method not found", json!({"tool": name}))),
     }
+}
+
+// ── Instance-data RDF tools (WS1) ─────────────────────────────────────────────
+//
+// Thin wrappers over sparrowdb_ontology_core::rdf_data. All logic lives in core;
+// these only marshal params and format the response.
+
+fn require_base_iri(args: &Value) -> Result<String, Value> {
+    args["base_iri"]
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+        .ok_or_else(|| {
+            mcp_error(
+                -32602,
+                "Missing required param: base_iri",
+                json!({"detail": "base_iri is the namespace entity IRIs are minted under, \
+                                  e.g. 'https://example.org/kb'."}),
+            )
+        })
+}
+
+pub fn export_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+    let base_iri = require_base_iri(&args)?;
+
+    let (turtle, report) = sparrowdb_ontology_core::export_data_with_report(db, &base_iri)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
+
+    // Serialize the whole ExportReport rather than re-listing fields here —
+    // a manually maintained subset silently falls behind whenever the report
+    // grows a field (this is exactly how it missed `unrepresentable_iris`).
+    Ok(json!({
+        "content": [
+            {"type": "text", "text": turtle},
+            {"type": "text", "text": serde_json::to_string(&report).unwrap_or_default()}
+        ]
+    }))
+}
+
+pub fn export_data_json_ld(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+    let base_iri = require_base_iri(&args)?;
+
+    let doc = sparrowdb_ontology_core::export_data_json_ld(db, &base_iri)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
+
+    // Re-run for the report; the export itself is read-only, and this gives
+    // callers the same unrepresentable-IRI/orphan/dangling-edge diagnostics
+    // export_data_turtle returns instead of silently omitting them.
+    let (_, report) = sparrowdb_ontology_core::export_data_with_report(db, &base_iri)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data export failed", &e))?;
+
+    let text = serde_json::to_string_pretty(&doc).map_err(|e| {
+        mcp_error(
+            -32603,
+            "serialization_error",
+            json!({"detail": e.to_string()}),
+        )
+    })?;
+    Ok(json!({
+        "content": [
+            {"type": "text", "text": text},
+            {"type": "text", "text": serde_json::to_string(&report).unwrap_or_default()}
+        ]
+    }))
+}
+
+pub fn import_data_turtle(db: &GraphDb, params: Option<Value>) -> Result<Value, Value> {
+    let args = params.unwrap_or(json!({}));
+
+    let turtle = args["turtle"]
+        .as_str()
+        .ok_or_else(|| mcp_error(-32602, "Missing required param: turtle", json!({})))?;
+
+    let strategy = match args["strategy"].as_str().unwrap_or("strict") {
+        "auto_declare" | "auto-declare" | "AutoDeclare" => {
+            sparrowdb_ontology_core::ImportStrategy::AutoDeclare
+        }
+        "strict" | "Strict" => sparrowdb_ontology_core::ImportStrategy::Strict,
+        other => {
+            return Err(mcp_error(
+                -32602,
+                "Invalid strategy",
+                json!({"detail": format!(
+                    "strategy must be 'strict' or 'auto_declare', got '{other}'"
+                )}),
+            ))
+        }
+    };
+
+    let report = sparrowdb_ontology_core::import_data_turtle(db, turtle, strategy)
+        .map_err(|e| so_error_to_mcp_error(-32603, "Data import failed", &e))?;
+
+    // A `Result::Ok` here only means the import call didn't hard-fail — the
+    // CLI's `cmd_import_data` treats any skip as a pipeline-gate failure
+    // (`{skipped_total} item(s) were not imported`), and MCP callers need the
+    // same signal. Without `isError`, a strict-mode import where every
+    // subject is an unknown class returns a clean-looking success: the
+    // dispatcher in main.rs only sets `isError` on a hard `Err`, and this
+    // handler always returned `Ok`, so a client that checks `isError` before
+    // parsing content (the documented MCP pattern) would see success on an
+    // import that imported nothing.
+    let skipped_total =
+        report.entities_skipped + report.relationships_skipped + report.blank_nodes_skipped;
+
+    Ok(json!({
+        "content": [{
+            "type": "text",
+            "text": serde_json::to_string(&report).unwrap_or_default()
+        }],
+        "isError": skipped_total > 0
+    }))
 }
 
 // ── create_entity ─────────────────────────────────────────────────────────────

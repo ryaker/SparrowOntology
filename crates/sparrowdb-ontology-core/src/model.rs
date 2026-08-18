@@ -146,6 +146,10 @@ pub struct OntologyProperty {
     pub created_at: i64,
     /// Owner name — used during seeding to look up owner_symbol_id.
     pub owner_name: String,
+    /// `rdfs:comment` or other description text, if provided at import time.
+    pub description: Option<String>,
+    /// Source IRI of the originating `owl:DatatypeProperty`, if imported from Turtle.
+    pub source_iri: Option<String>,
 }
 
 impl OntologyProperty {
@@ -162,6 +166,8 @@ impl OntologyProperty {
             owner_kind: OwnerKind::Class,
             created_at: now_utc_ms(),
             owner_name: owner.to_string(),
+            description: None,
+            source_iri: None,
         }
     }
 
