@@ -12,6 +12,25 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      # rdflib backs tests/tools/verify_rdf.py, the independent-implementation
+      # cross-check that roundtrip_is_graph_isomorphic runs against the
+      # exporter's own Turtle/JSON-LD output. SPARROW_RDFLIB_REQUIRED below
+      # turns a missing-rdflib skip into a hard failure in this job, so the
+      # check installed here is the one actually enforced, not a decoration.
+      - run: pip install rdflib
       - run: cargo fmt --check
       - run: cargo clippy -- -D warnings
-      - run: cargo test --workspace
+      # --locked: Cargo.toml pins the SparrowDB engine to an explicit `rev`,
+      # but only Cargo.lock enforces it — `--locked` fails the build instead
+      # of silently re-resolving if the lockfile and manifest ever disagree.
+      - run: cargo test --workspace --locked
+        env:
+          # Locally, a developer without rdflib installed still gets a skip
+          # (see run_rdflib_check in tests/integration/test_rdf_data.rs). In
+          # CI, rdflib is always installed by the step above, so a skip here
+          # means the cross-check silently stopped running — that must fail
+          # loudly rather than report green.
+          SPARROW_RDFLIB_REQUIRED: "1"

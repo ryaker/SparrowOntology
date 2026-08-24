@@ -211,6 +211,11 @@ rdflib is importable. Point `SPARROW_RDFLIB_PYTHON` at an interpreter that has
 rdflib to enable it in CI; without it the script exits 77 and the test reports
 the cross-check as skipped rather than passing silently.
 
+`.github/workflows/ci.yml` installs rdflib and sets `SPARROW_RDFLIB_REQUIRED=1`
+for the test step, so in CI a skip (exit 77, or the interpreter failing to
+launch) fails the build instead of quietly passing — a local run without
+rdflib installed still skips normally.
+
 ## Engine caveats
 
 As of SparrowDB 0.1.27 (the version this crate pins), the engine refuses to

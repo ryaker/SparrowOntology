@@ -820,6 +820,15 @@ fn schema_export_json_ld_is_unchanged() {
 /// adds a *second, independent* implementation's opinion, which is what the
 /// spec asks for. If rdflib is not installed the script exits 77 and this is
 /// reported as skipped — never silently treated as a pass.
+/// True when the environment says a skip must be treated as a failure —
+/// set by `.github/workflows/ci.yml`, which installs rdflib before the test
+/// step runs specifically so this check is real there. Unset locally, so a
+/// developer without rdflib still gets a skip rather than a spurious
+/// failure.
+fn rdflib_required() -> bool {
+    std::env::var("SPARROW_RDFLIB_REQUIRED").as_deref() == Ok("1")
+}
+
 fn run_rdflib_check(ttl1: &str, ttl2: &str, jsonld: &serde_json::Value) {
     let dir = tempfile::tempdir().unwrap();
     let p1 = dir.path().join("export1.ttl");
@@ -845,6 +854,11 @@ fn run_rdflib_check(ttl1: &str, ttl2: &str, jsonld: &serde_json::Value) {
     {
         Ok(o) => o,
         Err(e) => {
+            assert!(
+                !rdflib_required(),
+                "rdflib cross-check is REQUIRED (SPARROW_RDFLIB_REQUIRED=1) but {python} \
+                 could not be run: {e}"
+            );
             eprintln!("rdflib cross-check SKIPPED: cannot run {python}: {e}");
             return;
         }
@@ -854,11 +868,23 @@ fn run_rdflib_check(ttl1: &str, ttl2: &str, jsonld: &serde_json::Value) {
     let stderr = String::from_utf8_lossy(&out.stderr);
     match out.status.code() {
         Some(0) => eprintln!("rdflib cross-check PASSED: {}", stdout.trim()),
-        // 77 is the script's "rdflib not installed" signal.
-        Some(77) => eprintln!(
-            "rdflib cross-check SKIPPED: rdflib not installed. \
-             Set SPARROW_RDFLIB_PYTHON to an interpreter that has it."
-        ),
+        // 77 is the script's "rdflib not installed" signal. That is an
+        // acceptable skip on a developer machine, but if the environment
+        // says rdflib is required (CI installs it before this test runs),
+        // exit 77 means the install step failed or the wrong interpreter is
+        // being used — a real problem, not something to skip past quietly.
+        Some(77) => {
+            assert!(
+                !rdflib_required(),
+                "rdflib cross-check is REQUIRED (SPARROW_RDFLIB_REQUIRED=1) but rdflib is not \
+                 importable via {python}. Check the CI install step, or SPARROW_RDFLIB_PYTHON \
+                 if it points at the wrong interpreter."
+            );
+            eprintln!(
+                "rdflib cross-check SKIPPED: rdflib not installed. \
+                 Set SPARROW_RDFLIB_PYTHON to an interpreter that has it."
+            );
+        }
         _ => panic!("rdflib cross-check FAILED:\n{stdout}\n{stderr}"),
     }
 }
