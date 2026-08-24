@@ -502,6 +502,133 @@ fn import_report_surfaces_every_skip_with_its_subject() {
     assert!(r4.contains("rdf:type"), "{r4}");
 }
 
+/// `blank_nodes_skipped` was asserted only as `== 0` on fixtures containing
+/// no blank node anywhere in the suite — deleting the blank-node handling in
+/// `import_data_turtle` would not fail any test. This drives it nonzero.
+///
+/// The fixture has one well-formed named subject and one blank-node subject
+/// carrying two triples (`a` and `name`). Blank-node subjects are counted
+/// **per triple**, not per subject — `import_data_turtle` increments
+/// `blank_nodes_skipped` in the parser loop before any subject is even
+/// assembled — so two triples on `_:b1` means the counter reads 2, not 1.
+#[test]
+fn blank_node_subject_is_counted_and_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = GraphDb::open(dir.path()).unwrap();
+    declare_schema(&db);
+
+    let ttl = format!(
+        r#"
+        <{BASE}/Person/1> a <{BASE}/schema/Person> ;
+            <{BASE}/schema/name> "Valid Person" .
+
+        _:b1 a <{BASE}/schema/Person> ;
+            <{BASE}/schema/name> "Blank Node Person" .
+        "#
+    );
+
+    let report = import_data_turtle(&db, &ttl, ImportStrategy::Strict).unwrap();
+
+    // _:b1's two triples (`a`, `name`) each hit the BlankNode arm before a
+    // SubjectData is ever created for it, so it never becomes an entity skip
+    // and never appears in `skips` (which is keyed by subject IRI — a blank
+    // node has none to record).
+    assert_eq!(report.blank_nodes_skipped, 2, "{report:?}");
+    assert_eq!(report.entities_imported, 1, "{report:?}");
+    assert_eq!(report.entities_skipped, 0, "{report:?}");
+    assert_eq!(report.skips.len(), 0, "{report:?}");
+}
+
+/// `relationships_skipped` was asserted only as `== 0` on a fixture with no
+/// broken relationship anywhere in the suite. This drives it nonzero with a
+/// relationship whose target was never imported as an entity (no `rdf:type`
+/// triple for it at all — it exists only as an object).
+#[test]
+fn relationship_with_missing_endpoint_is_skipped() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = GraphDb::open(dir.path()).unwrap();
+    declare_schema(&db);
+
+    // Person/1 is well-formed and declares one WORKS_FOR edge to
+    // Organization/999 — which never appears as a subject, so it is never
+    // imported and `node_of` has no entry for it.
+    let ttl = format!(
+        r#"
+        <{BASE}/Person/1> a <{BASE}/schema/Person> ;
+            <{BASE}/schema/name> "Ada" ;
+            <{BASE}/schema/WORKS_FOR> <{BASE}/Organization/999> .
+        "#
+    );
+
+    let report = import_data_turtle(&db, &ttl, ImportStrategy::Strict).unwrap();
+
+    // The entity itself imports fine — only the relationship it declares is
+    // rejected, in the second pass over already-imported subjects.
+    assert_eq!(report.entities_imported, 1, "{report:?}");
+    assert_eq!(report.entities_skipped, 0, "{report:?}");
+    assert_eq!(report.relationships_imported, 0, "{report:?}");
+    assert_eq!(report.relationships_skipped, 1, "{report:?}");
+    assert_eq!(report.skips.len(), 1, "{report:?}");
+
+    let skip = &report.skips[0];
+    assert_eq!(skip.subject, format!("{BASE}/Person/1"));
+    assert!(skip.reason.contains("WORKS_FOR"), "{}", skip.reason);
+    assert!(
+        skip.reason.contains(&format!("{BASE}/Organization/999")),
+        "{}",
+        skip.reason
+    );
+}
+
+/// `report.warnings` was referenced nowhere in the suite, so the
+/// language-tag-drop path was entirely unverified. A language-tagged literal
+/// must import — SparrowOntology v1 stores plain strings, so the tag is
+/// dropped and the lexical value kept — and it must warn, not silently lose
+/// information.
+#[test]
+fn language_tagged_literal_is_stored_without_tag_and_warned() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = GraphDb::open(dir.path()).unwrap();
+    declare_schema(&db);
+
+    let ttl = format!(
+        r#"
+        <{BASE}/Person/1> a <{BASE}/schema/Person> ;
+            <{BASE}/schema/name> "Ada"@en .
+        "#
+    );
+
+    let report = import_data_turtle(&db, &ttl, ImportStrategy::Strict).unwrap();
+
+    assert_eq!(report.entities_imported, 1, "{report:?}");
+    assert_eq!(report.entities_skipped, 0, "{report:?}");
+    assert_eq!(
+        report.warnings.len(),
+        1,
+        "expected exactly one language-tag warning: {report:?}"
+    );
+    assert!(
+        report.warnings[0].contains("Language tag"),
+        "{}",
+        report.warnings[0]
+    );
+    assert!(
+        report.warnings[0].contains(&format!("{BASE}/Person/1")),
+        "{}",
+        report.warnings[0]
+    );
+
+    // The tag is dropped, not the value: the literal's lexical form survives
+    // into the stored property, and the entity round-trips through export.
+    db.checkpoint().unwrap();
+    let (ttl2, export_report) = export_data_with_report(&db, BASE).unwrap();
+    assert_eq!(export_report.entities_exported, 1, "{export_report:?}");
+    assert!(
+        ttl2.contains("\"Ada\""),
+        "expected the language-tagged value to survive as a plain string: {ttl2}"
+    );
+}
+
 /// `ImportStrategy::AutoDeclare` declares what `Strict` rejects.
 #[test]
 fn auto_declare_creates_missing_schema() {
