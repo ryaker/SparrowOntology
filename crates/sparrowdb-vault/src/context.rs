@@ -64,15 +64,19 @@ enum Def {
 impl ComposedContext {
     /// Load and compose starting from `<vault>/context.jsonld`.
     pub fn load(vault_root: &Path) -> Result<Self, VaultError> {
+        let vault_root = vault_root.canonicalize().map_err(|source| VaultError::Io {
+            path: vault_root.to_path_buf(),
+            source,
+        })?;
         let root_ctx = vault_root.join("context.jsonld");
         if !root_ctx.is_file() {
-            return Err(VaultError::MissingRootContext(vault_root.to_path_buf()));
+            return Err(VaultError::MissingRootContext(vault_root));
         }
         let mut composed = ComposedContext::default();
         let mut origins: BTreeMap<String, (Def, PathBuf)> = BTreeMap::new();
         let mut stack = Vec::new();
         apply_document(
-            vault_root,
+            &vault_root,
             &root_ctx,
             &mut composed,
             &mut origins,
@@ -171,16 +175,11 @@ fn apply_href(
             href: href.to_string(),
         });
     }
+    refuse_symlink_components(vault_root, &target, from_file, href)?;
     let meta = fs::symlink_metadata(&target).map_err(|source| VaultError::Io {
         path: target.clone(),
         source,
     })?;
-    if meta.file_type().is_symlink() {
-        return Err(VaultError::UnsafeContextRef {
-            from: from_file.to_path_buf(),
-            href: href.to_string(),
-        });
-    }
     if !meta.is_file() {
         return Err(VaultError::Io {
             path: target,
@@ -188,6 +187,38 @@ fn apply_href(
         });
     }
     apply_document(vault_root, &target, composed, origins, stack)
+}
+
+/// `lstat` every component from `vault_root` to `target` and refuse if any is
+/// a symlink. A directory symlink (`vault/leak → /etc`) would otherwise let
+/// `leak/passwd` look lexically in-vault while `read_to_string` follows it.
+fn refuse_symlink_components(
+    vault_root: &Path,
+    target: &Path,
+    from_file: &Path,
+    href: &str,
+) -> Result<(), VaultError> {
+    let rel = target
+        .strip_prefix(vault_root)
+        .map_err(|_| VaultError::UnsafeContextRef {
+            from: from_file.to_path_buf(),
+            href: href.to_string(),
+        })?;
+    let mut cur = vault_root.to_path_buf();
+    for c in rel.components() {
+        cur.push(c);
+        let meta = fs::symlink_metadata(&cur).map_err(|source| VaultError::Io {
+            path: cur.clone(),
+            source,
+        })?;
+        if meta.file_type().is_symlink() {
+            return Err(VaultError::UnsafeContextRef {
+                from: from_file.to_path_buf(),
+                href: href.to_string(),
+            });
+        }
+    }
+    Ok(())
 }
 
 fn apply_object(
@@ -600,6 +631,29 @@ mod tests {
         fs::write(
             vault.join("context.jsonld"),
             r#"{ "@context": ["link.jsonld"] }"#,
+        )
+        .unwrap();
+        let err = ComposedContext::load(&vault).unwrap_err();
+        assert!(matches!(err, VaultError::UnsafeContextRef { .. }), "{err}");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn directory_symlink_context_target_is_refused() {
+        let parent = tempfile::tempdir().unwrap();
+        let vault = parent.path().join("vault");
+        fs::create_dir(&vault).unwrap();
+        let outside = parent.path().join("outside");
+        fs::create_dir(&outside).unwrap();
+        fs::write(
+            outside.join("stolen.jsonld"),
+            r#"{ "@context": { "pwn": "https://evil.example/pwn" } }"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(&outside, vault.join("nested")).unwrap();
+        fs::write(
+            vault.join("context.jsonld"),
+            r#"{ "@context": ["nested/stolen.jsonld"] }"#,
         )
         .unwrap();
         let err = ComposedContext::load(&vault).unwrap_err();
