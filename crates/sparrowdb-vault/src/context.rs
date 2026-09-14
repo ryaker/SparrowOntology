@@ -158,8 +158,30 @@ fn apply_href(
             href: href.to_string(),
         });
     }
+    if is_absolute_href(href) {
+        return Err(VaultError::UnsafeContextRef {
+            from: from_file.to_path_buf(),
+            href: href.to_string(),
+        });
+    }
     let target = resolve_href(from_file, href);
-    if !target.is_file() {
+    if !is_lexically_under(vault_root, &target) {
+        return Err(VaultError::UnsafeContextRef {
+            from: from_file.to_path_buf(),
+            href: href.to_string(),
+        });
+    }
+    let meta = fs::symlink_metadata(&target).map_err(|source| VaultError::Io {
+        path: target.clone(),
+        source,
+    })?;
+    if meta.file_type().is_symlink() {
+        return Err(VaultError::UnsafeContextRef {
+            from: from_file.to_path_buf(),
+            href: href.to_string(),
+        });
+    }
+    if !meta.is_file() {
         return Err(VaultError::Io {
             path: target,
             source: std::io::Error::new(std::io::ErrorKind::NotFound, "context file not found"),
@@ -251,6 +273,11 @@ fn record(
         }
     }
     origins.insert(key.to_string(), (def.clone(), from_file.to_path_buf()));
+    // Later definition wins (§4.2): retract the previous kind so a term does
+    // not keep shadowing as an alias/prefix (and vice versa).
+    composed.prefixes.remove(key);
+    composed.keyword_aliases.remove(key);
+    composed.terms.remove(key);
     match def {
         Def::Prefix(iri) => {
             composed.prefixes.insert(key.to_string(), iri);
@@ -286,6 +313,19 @@ fn container_of(v: Option<&Value>) -> Option<String> {
 fn is_remote(href: &str) -> bool {
     let h = href.trim();
     h.contains("://") || h.starts_with("//")
+}
+
+fn is_absolute_href(href: &str) -> bool {
+    let h = href.trim();
+    Path::new(h).is_absolute() || h.starts_with('/')
+}
+
+/// Component-wise containment (not a string prefix — `/vault-evil` is not
+/// under `/vault`).
+fn is_lexically_under(root: &Path, target: &Path) -> bool {
+    let root = normalize(root.to_path_buf());
+    let target = normalize(target.to_path_buf());
+    target.starts_with(root)
 }
 
 fn resolve_href(from_file: &Path, href: &str) -> PathBuf {
@@ -439,5 +479,130 @@ mod tests {
         .unwrap();
         let err = ComposedContext::load(dir.path()).unwrap_err();
         assert!(matches!(err, VaultError::RemoteContext { .. }));
+    }
+
+    #[test]
+    fn later_redefinition_retracts_previous_kind() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Ontologies/A")).unwrap();
+        fs::write(
+            dir.path().join("context.jsonld"),
+            r#"{
+              "@context": [
+                { "type": "@type", "ex": "https://example.org/" },
+                "Ontologies/A/context.jsonld"
+              ]
+            }"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("Ontologies/A/context.jsonld"),
+            r#"{ "@context": { "type": "https://example.org/type", "ex": "@id" } }"#,
+        )
+        .unwrap();
+
+        let ctx = ComposedContext::load(dir.path()).unwrap();
+        assert!(
+            !ctx.keyword_aliases.contains_key("type"),
+            "term redefinition must drop the alias"
+        );
+        assert_eq!(
+            ctx.terms.get("type").map(|t| t.iri.as_str()),
+            Some("https://example.org/type")
+        );
+        assert!(
+            !ctx.prefixes.contains_key("ex"),
+            "alias redefinition must drop the prefix"
+        );
+        assert_eq!(
+            ctx.keyword_aliases.get("ex").map(String::as_str),
+            Some("@id")
+        );
+        assert_eq!(ctx.warnings.len(), 2);
+    }
+
+    #[test]
+    fn absolute_href_is_refused() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::write(
+            dir.path().join("context.jsonld"),
+            r#"{ "@context": ["/etc/passwd"] }"#,
+        )
+        .unwrap();
+        let err = ComposedContext::load(dir.path()).unwrap_err();
+        assert!(matches!(err, VaultError::UnsafeContextRef { .. }), "{err}");
+    }
+
+    #[test]
+    fn parent_href_escaping_vault_is_refused() {
+        let parent = tempfile::tempdir().unwrap();
+        let vault = parent.path().join("vault");
+        let vault_evil = parent.path().join("vault-evil");
+        fs::create_dir(&vault).unwrap();
+        fs::create_dir(&vault_evil).unwrap();
+        fs::write(
+            vault_evil.join("stolen.jsonld"),
+            r#"{ "@context": { "pwn": "https://evil.example/pwn" } }"#,
+        )
+        .unwrap();
+        fs::write(
+            vault.join("context.jsonld"),
+            r#"{ "@context": ["../vault-evil/stolen.jsonld"] }"#,
+        )
+        .unwrap();
+        let err = ComposedContext::load(&vault).unwrap_err();
+        assert!(matches!(err, VaultError::UnsafeContextRef { .. }), "{err}");
+    }
+
+    #[test]
+    fn in_vault_parent_href_is_allowed() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Ontologies/Gadgets")).unwrap();
+        fs::create_dir_all(dir.path().join("Ontologies/Shared")).unwrap();
+        fs::write(
+            dir.path().join("context.jsonld"),
+            r#"{ "@context": ["Ontologies/Gadgets/context.jsonld"] }"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("Ontologies/Gadgets/context.jsonld"),
+            r#"{ "@context": ["../Shared/context.jsonld"] }"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("Ontologies/Shared/context.jsonld"),
+            r#"{ "@context": { "massGrams": "https://example.org/massGrams" } }"#,
+        )
+        .unwrap();
+        let ctx = ComposedContext::load(dir.path()).unwrap();
+        assert_eq!(
+            ctx.terms.get("massGrams").map(|t| t.iri.as_str()),
+            Some("https://example.org/massGrams")
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn symlink_context_target_is_refused() {
+        let parent = tempfile::tempdir().unwrap();
+        let vault = parent.path().join("vault");
+        fs::create_dir(&vault).unwrap();
+        fs::write(
+            parent.path().join("outside.jsonld"),
+            r#"{ "@context": { "x": "https://example.org/x" } }"#,
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(
+            parent.path().join("outside.jsonld"),
+            vault.join("link.jsonld"),
+        )
+        .unwrap();
+        fs::write(
+            vault.join("context.jsonld"),
+            r#"{ "@context": ["link.jsonld"] }"#,
+        )
+        .unwrap();
+        let err = ComposedContext::load(&vault).unwrap_err();
+        assert!(matches!(err, VaultError::UnsafeContextRef { .. }), "{err}");
     }
 }

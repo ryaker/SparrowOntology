@@ -158,17 +158,26 @@ pub fn check(vault: &Vault) -> Result<CheckReport, VaultError> {
             continue;
         }
         if let Some(id) = first_field(&item.fm, &id_keys) {
-            if let Some(s) = value_as_str(id) {
-                if !is_conforming_explicit_id(s) {
-                    report.errors.push(Diagnostic {
-                        file: item.note.relative.clone(),
-                        line: Some(item.yaml_line),
-                        field: Some("id".into()),
-                        kind: DiagnosticKind::RelativeExplicitId,
-                        message: format!("explicit id `{s}` is not an absolute http(s) IRI"),
-                        suggestion: Some("Use a full IRI, e.g. https://example.org/name".into()),
-                    });
-                }
+            let as_str = value_as_str(id);
+            if !as_str.is_some_and(is_conforming_explicit_id) {
+                let shown = match as_str {
+                    Some(s) => s.to_string(),
+                    None => match id {
+                        FrontmatterValue::Integer(n) => n.to_string(),
+                        FrontmatterValue::Float(n) => n.to_string(),
+                        FrontmatterValue::Bool(b) => b.to_string(),
+                        FrontmatterValue::Null => "null".into(),
+                        _ => "non-string".into(),
+                    },
+                };
+                report.errors.push(Diagnostic {
+                    file: item.note.relative.clone(),
+                    line: Some(item.yaml_line),
+                    field: Some("id".into()),
+                    kind: DiagnosticKind::RelativeExplicitId,
+                    message: format!("explicit id `{shown}` is not an absolute http(s) IRI"),
+                    suggestion: Some("Use a full IRI, e.g. https://example.org/name".into()),
+                });
             }
         }
 
@@ -268,10 +277,14 @@ fn link_resolves(link: &WikiLink, by_name: &BTreeMap<String, Vec<&NotePath>>) ->
     let Some(cands) = by_name.get(&link.name) else {
         return false;
     };
-    if let Some(path) = &link.path {
-        cands.iter().any(|n| note_matches_path(n, path, &link.name))
-    } else {
-        !cands.is_empty()
+    // Spec §4.4.1: path disambiguates only when several participating notes
+    // share a name; resolution uses the final segment.
+    if cands.len() == 1 {
+        return true;
+    }
+    match &link.path {
+        Some(path) => cands.iter().any(|n| note_matches_path(n, path, &link.name)),
+        None => true,
     }
 }
 
@@ -365,5 +378,66 @@ mod tests {
         let report = check(&vault).unwrap();
         assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert!(report.warnings.is_empty(), "{:?}", report.warnings);
+    }
+
+    #[test]
+    fn unique_name_resolves_regardless_of_path() {
+        let dir = tempfile::tempdir().unwrap();
+        write_min_context(dir.path());
+        fs::create_dir_all(dir.path().join("Ontologies/Culinary/Classes")).unwrap();
+        fs::create_dir_all(dir.path().join("Items")).unwrap();
+        fs::write(
+            dir.path().join("Ontologies/Culinary/Classes/Recipe.md"),
+            "---\ntype: owl:Class\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("Items/Widget.md"),
+            "---\ntype: owl:Class\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("Items/sprocket.md"),
+            "---\ntype: \"[[Culinary/Recipe]]\"\nrelated: \"[[Nope/Widget]]\"\n---\n",
+        )
+        .unwrap();
+        let vault = Vault::open(dir.path()).unwrap();
+        let report = check(&vault).unwrap();
+        let dangling: Vec<_> = report
+            .errors
+            .iter()
+            .filter(|d| d.kind == DiagnosticKind::DanglingWikiLink)
+            .collect();
+        assert!(
+            dangling.is_empty(),
+            "unique names must resolve even with a wrong/partial path: {dangling:?}"
+        );
+    }
+
+    #[test]
+    fn integer_explicit_id_is_relative() {
+        let dir = tempfile::tempdir().unwrap();
+        write_min_context(dir.path());
+        fs::create_dir_all(dir.path().join("Items")).unwrap();
+        fs::write(
+            dir.path().join("Items/Widget.md"),
+            "---\ntype: owl:Class\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            dir.path().join("Items/sprocket.md"),
+            "---\ntype: \"[[Widget]]\"\nid: 123\n---\n",
+        )
+        .unwrap();
+        let vault = Vault::open(dir.path()).unwrap();
+        let report = check(&vault).unwrap();
+        assert!(
+            report
+                .errors
+                .iter()
+                .any(|d| d.kind == DiagnosticKind::RelativeExplicitId),
+            "{:?}",
+            report.errors
+        );
     }
 }

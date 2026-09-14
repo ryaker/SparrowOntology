@@ -143,8 +143,14 @@ fn print_check_report(report: &CheckReport) {
     for d in &report.warnings {
         print_diag("warning", d);
     }
-    if report.is_clean() {
+    if report.errors.is_empty() && report.warnings.is_empty() {
         println!("{} file(s) checked, no issues", report.files_checked);
+    } else if report.errors.is_empty() {
+        println!(
+            "{} file(s) checked, {} warning(s)",
+            report.files_checked,
+            report.warnings.len()
+        );
     }
 }
 

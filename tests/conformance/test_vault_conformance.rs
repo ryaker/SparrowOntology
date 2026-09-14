@@ -66,10 +66,20 @@ fn clean_vault_check_is_clean() {
 fn check_reports_dangling_wiki_link() {
     let vault = Vault::open(seeded_vault("dangling-link")).unwrap();
     let report = check(&vault).unwrap();
-    assert!(report
+    let dangling: Vec<_> = report
         .errors
         .iter()
-        .any(|d| d.kind == DiagnosticKind::DanglingWikiLink));
+        .filter(|d| d.kind == DiagnosticKind::DanglingWikiLink)
+        .collect();
+    assert_eq!(dangling.len(), 1, "{dangling:?}");
+    assert!(dangling[0].file.ends_with("sprocket.md"));
+    assert_eq!(dangling[0].field.as_deref(), Some("related"));
+    assert!(dangling[0].line.is_some());
+    assert!(
+        dangling[0].message.contains("NoSuchNote"),
+        "{}",
+        dangling[0].message
+    );
     assert!(report.errors.iter().all(|d| d.suggestion.is_some()));
 }
 
@@ -77,10 +87,13 @@ fn check_reports_dangling_wiki_link() {
 fn check_reports_relative_explicit_id() {
     let vault = Vault::open(seeded_vault("relative-id")).unwrap();
     let report = check(&vault).unwrap();
-    assert!(report
+    let rel: Vec<_> = report
         .errors
         .iter()
-        .any(|d| d.kind == DiagnosticKind::RelativeExplicitId));
+        .filter(|d| d.kind == DiagnosticKind::RelativeExplicitId)
+        .collect();
+    assert!(!rel.is_empty(), "{:?}", report.errors);
+    assert!(rel.iter().any(|d| d.file.ends_with("sprocket.md")));
 }
 
 /// One file with malformed YAML is reported and skipped; the rest of the vault

@@ -19,7 +19,7 @@ Sparrow stays MIT and does not vendor their code (spec §2.7). Plan:
   clear message, so `cargo test` stays offline-clean.
 - Attribution for the example content goes in this README when the fetch lands.
 
-Seeded-error vaults for `check` (unknown property, bad range, dangling link,
+Seeded-error vaults for `check` (unknown property, dangling link,
 malformed YAML) are our own content and *can* be committed here under
 `tests/conformance/vaults/`.
 

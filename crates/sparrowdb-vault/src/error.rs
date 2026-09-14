@@ -33,6 +33,11 @@ pub enum VaultError {
     #[error("remote context ref {href} in {from} (network access is forbidden)")]
     RemoteContext { from: PathBuf, href: String },
 
+    /// Absolute path, vault escape, or symlink — context refs must be regular
+    /// files lexically inside the vault.
+    #[error("unsafe context ref {href} in {from}")]
+    UnsafeContextRef { from: PathBuf, href: String },
+
     #[error("context composition cycle involving {0}")]
     ContextCycle(PathBuf),
 
