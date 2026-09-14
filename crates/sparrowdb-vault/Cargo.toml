@@ -1,0 +1,27 @@
+[package]
+name = "sparrowdb-vault"
+version = "0.1.0"
+edition = "2021"
+description = "Vault-LD engine for Sparrow Ontology — sync, validate, and drift-check Markdown vaults against a SparrowDB graph"
+license = "MIT"
+repository = "https://github.com/ryaker/SparrowOntology"
+homepage = "https://github.com/ryaker/SparrowOntology"
+# Scaffold only: public entry points return `VaultError::NotImplemented`.
+# Flip this once the parse + check slices land.
+publish = false
+
+[dependencies]
+sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core", version = "0.1.4" }
+# Needed only for the `GraphDb` handle in sync/export/drift signatures.
+sparrowdb = "0.1.20"
+thiserror = "1"
+
+# Deliberately NOT added yet (each lands with the slice that needs it, with
+# justification in that PR per spec §2.6):
+#   - a YAML parser for frontmatter        (parse slice)
+#   - `notify` for `watch`, feature-gated   (watch slice)
+#   - content hashing for drift manifests   (drift slice)
+
+[[test]]
+name = "test_vault_conformance"
+path = "../../tests/conformance/test_vault_conformance.rs"

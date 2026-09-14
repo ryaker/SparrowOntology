@@ -12,6 +12,8 @@ use sparrowdb_ontology_core::{
 };
 use sparrowdb_ontology_mcp::tools::handle_tool_call;
 
+mod vault;
+
 // ── CLI definition ────────────────────────────────────────────────────────────
 
 #[derive(Parser)]
@@ -227,6 +229,11 @@ enum Commands {
         #[arg(long, default_value = "strict", value_parser = ["strict", "auto-declare"])]
         strategy: String,
     },
+    /// Sync, validate, and drift-check a Vault-LD Markdown vault (scaffold)
+    Vault {
+        #[command(subcommand)]
+        command: vault::VaultCommand,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -306,6 +313,7 @@ fn run(cli: Cli) -> Result<(), String> {
             out,
         } => cmd_export_data(&db, &format, &base, out.as_deref()),
         Commands::ImportData { file, db, strategy } => cmd_import_data(&db, &file, &strategy),
+        Commands::Vault { command } => vault::run(command),
     }
 }
 

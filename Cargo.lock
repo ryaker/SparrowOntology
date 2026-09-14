@@ -1110,6 +1110,7 @@ dependencies = [
  "sparrowdb-common",
  "sparrowdb-ontology-core",
  "sparrowdb-ontology-mcp",
+ "sparrowdb-vault",
  "tempfile",
 ]
 
@@ -1164,6 +1165,15 @@ dependencies = [
  "serde",
  "sparrowdb-common",
  "tracing",
+]
+
+[[package]]
+name = "sparrowdb-vault"
+version = "0.1.0"
+dependencies = [
+ "sparrowdb",
+ "sparrowdb-ontology-core",
+ "thiserror",
 ]
 
 [[package]]
