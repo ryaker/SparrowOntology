@@ -1,0 +1,4 @@
+---
+type: owl:Class
+---
+# Widget

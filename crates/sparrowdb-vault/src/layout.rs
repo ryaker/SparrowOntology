@@ -4,6 +4,7 @@
 //! `Vocabularies/` is schema, everything else is instance. Folders never
 //! shape identity or hierarchy (§4.5, §5.2) — only the layer.
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::error::VaultError;
@@ -77,9 +78,57 @@ impl Vault {
 
     /// Every `.md` note in the vault. Non-Markdown files (images, PDFs, …)
     /// are skipped and logged at debug level — spec open question default.
+    /// Hidden directories (name starts with `.`) are not entered.
     pub fn notes(&self) -> Result<Vec<NotePath>, VaultError> {
-        Err(VaultError::not_implemented("Vault::notes", "parse"))
+        let mut notes = Vec::new();
+        collect_md(&self.root, &self.root, &mut notes)?;
+        notes.sort_by(|a, b| a.relative.cmp(&b.relative));
+        Ok(notes)
     }
+}
+
+fn collect_md(root: &Path, dir: &Path, out: &mut Vec<NotePath>) -> Result<(), VaultError> {
+    let entries = fs::read_dir(dir).map_err(|source| VaultError::Io {
+        path: dir.to_path_buf(),
+        source,
+    })?;
+    let mut entries: Vec<_> =
+        entries
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|source| VaultError::Io {
+                path: dir.to_path_buf(),
+                source,
+            })?;
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with('.') {
+            continue;
+        }
+        let path = entry.path();
+        let ft = entry.file_type().map_err(|source| VaultError::Io {
+            path: path.clone(),
+            source,
+        })?;
+        if ft.is_symlink() {
+            continue;
+        }
+        if ft.is_dir() {
+            collect_md(root, &path, out)?;
+            continue;
+        }
+        if ft.is_file() {
+            if path.extension().and_then(|e| e.to_str()) == Some("md") {
+                let relative = path.strip_prefix(root).unwrap_or(&path).to_path_buf();
+                out.push(NotePath { relative });
+            } else {
+                log::debug!("skipping non-Markdown vault file {}", path.display());
+            }
+        }
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -116,5 +165,25 @@ mod tests {
             note("Recipes/Soups/Red Lentil Soup.md").note_name(),
             Some("Red Lentil Soup")
         );
+    }
+
+    #[test]
+    fn notes_walks_md_skips_hidden_and_non_md() {
+        let dir = tempfile::tempdir().unwrap();
+        fs::create_dir_all(dir.path().join("Items")).unwrap();
+        fs::create_dir_all(dir.path().join(".obsidian")).unwrap();
+        fs::write(dir.path().join("Items/sprocket.md"), "---\ntype: x\n---\n").unwrap();
+        fs::write(dir.path().join("readme.txt"), "nope").unwrap();
+        fs::write(dir.path().join("pic.png"), [0u8; 4]).unwrap();
+        fs::write(dir.path().join(".obsidian/app.md"), "hidden").unwrap();
+        fs::write(dir.path().join(".hidden.md"), "dotfile").unwrap();
+
+        let vault = Vault::open(dir.path()).unwrap();
+        let notes = vault.notes().unwrap();
+        let rels: Vec<_> = notes
+            .iter()
+            .map(|n| n.relative.to_string_lossy().replace('\\', "/"))
+            .collect();
+        assert_eq!(rels, vec!["Items/sprocket.md"]);
     }
 }

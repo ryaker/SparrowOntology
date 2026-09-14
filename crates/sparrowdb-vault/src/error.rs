@@ -18,6 +18,24 @@ pub enum VaultError {
     #[error("missing root context.jsonld in vault {0}")]
     MissingRootContext(PathBuf),
 
+    #[error("malformed YAML frontmatter in {path}{}: {message}", line_suffix(*.line))]
+    MalformedYaml {
+        path: PathBuf,
+        /// 1-based line in the YAML block (not the file) when the parser can attribute it.
+        line: Option<usize>,
+        message: String,
+    },
+
+    #[error("malformed JSON in {path}: {message}")]
+    MalformedJson { path: PathBuf, message: String },
+
+    /// Spec §2.6: no runtime network access. A `http(s)://` context ref is refused.
+    #[error("remote context ref {href} in {from} (network access is forbidden)")]
+    RemoteContext { from: PathBuf, href: String },
+
+    #[error("context composition cycle involving {0}")]
+    ContextCycle(PathBuf),
+
     #[error("io error at {path}: {source}")]
     Io {
         path: PathBuf,
@@ -27,6 +45,13 @@ pub enum VaultError {
 
     #[error(transparent)]
     Ontology(#[from] SoError),
+}
+
+fn line_suffix(line: Option<usize>) -> String {
+    match line {
+        Some(n) => format!(":{n}"),
+        None => String::new(),
+    }
 }
 
 impl VaultError {

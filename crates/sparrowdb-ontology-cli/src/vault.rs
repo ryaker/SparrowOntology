@@ -1,12 +1,14 @@
 //! `sparrow-ontology vault …` — thin CLI over the `sparrowdb-vault` crate.
 //!
-//! Scaffold: every subcommand parses its arguments, opens the vault and the
-//! database, and surfaces the library's `NotImplemented` error (exit 1).
+//! `check` is implemented (DB-free this slice). Other subcommands still open
+//! the vault and database and surface `NotImplemented` (exit 1).
 
 use std::path::{Path, PathBuf};
 
 use clap::Subcommand;
-use sparrowdb_vault::{ExportOptions, SchemaMergePolicy, SyncOptions, Vault, VaultError};
+use sparrowdb_vault::{
+    CheckReport, Diagnostic, ExportOptions, SchemaMergePolicy, SyncOptions, Vault, VaultError,
+};
 
 use super::open_db;
 
@@ -46,8 +48,9 @@ pub enum VaultCommand {
     /// Dry-run validation of the whole vault; nonzero exit on any error
     Check {
         vault: PathBuf,
+        /// Reserved for ontology-dependent lints (sync slice). Unused for now.
         #[arg(long)]
-        db: PathBuf,
+        db: Option<PathBuf>,
         #[arg(long)]
         json: bool,
     },
@@ -99,9 +102,17 @@ pub fn run(cmd: VaultCommand) -> Result<(), String> {
             sparrowdb_vault::export(&db, &vault, &ExportOptions { dry_run }).map_err(render)?;
             Ok(())
         }
-        VaultCommand::Check { vault, db, json: _ } => {
-            let (db, vault) = open(&db, &vault)?;
-            let report = sparrowdb_vault::check(&db, &vault).map_err(render)?;
+        VaultCommand::Check { vault, db: _, json } => {
+            let vault = Vault::open(&vault).map_err(render)?;
+            let report = sparrowdb_vault::check(&vault).map_err(render)?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&report).map_err(|e| format!("Error: {e}"))?
+                );
+            } else {
+                print_check_report(&report);
+            }
             if report.is_clean() {
                 Ok(())
             } else {
@@ -123,4 +134,27 @@ fn open(db: &Path, vault: &Path) -> Result<(sparrowdb::GraphDb, Vault), String> 
 
 fn render(e: VaultError) -> String {
     format!("Error: {e}")
+}
+
+fn print_check_report(report: &CheckReport) {
+    for d in &report.errors {
+        print_diag("error", d);
+    }
+    for d in &report.warnings {
+        print_diag("warning", d);
+    }
+    if report.is_clean() {
+        println!("{} file(s) checked, no issues", report.files_checked);
+    }
+}
+
+fn print_diag(level: &str, d: &Diagnostic) {
+    let loc = match d.line {
+        Some(n) => format!("{}:{n}", d.file.display()),
+        None => d.file.display().to_string(),
+    };
+    println!("{level}: {loc}: {}", d.message);
+    if let Some(s) = &d.suggestion {
+        println!("  suggestion: {s}");
+    }
 }

@@ -7,15 +7,11 @@
 //! database, write-time validation, incremental sync, or drift detection.
 //! This crate is that engine, on top of SparrowOntology + SparrowDB.
 //!
-//! # Status: scaffold
+//! # Status: parse + DB-free `check`
 //!
-//! The module layout and public types are in place; every operation that
-//! touches a vault or a database returns [`VaultError::NotImplemented`].
-//! The two pieces implemented for real are the dependency-free parsing
-//! primitives the rest will build on:
-//!
-//! - [`parse::split_frontmatter`] — the `---` delimited block (§4.1)
-//! - [`parse::WikiLink::parse`] — the link grammar (§4.4.1)
+//! Frontmatter YAML, vault walking, context composition, IRI minting, and
+//! DB-free `check` lints are implemented. Sync/export/drift/watch still
+//! return [`VaultError::NotImplemented`].
 //!
 //! # Module map (Vault-LD section → module)
 //!
@@ -45,11 +41,13 @@ pub mod sync;
 pub mod watch;
 
 pub use check::{check, CheckReport, Diagnostic, DiagnosticKind};
+pub use context::ComposedContext;
 pub use drift::{drift, DriftEntry, DriftReport, DriftSide};
 pub use error::VaultError;
 pub use export::{export, ExportOptions, ExportReport};
+pub use identity::mint_iri;
 pub use layout::{Layer, NoteKind, NotePath, Vault};
-pub use parse::{split_frontmatter, Frontmatter, WikiLink};
+pub use parse::{split_frontmatter, Frontmatter, FrontmatterValue, WikiLink};
 pub use sync::{sync, SchemaMergePolicy, SyncOptions, SyncReport};
 
 /// Vault-LD spec version this crate targets.

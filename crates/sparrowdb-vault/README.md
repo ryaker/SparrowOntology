@@ -9,12 +9,11 @@ format and two stateless batch scripts (`vault_to_rdf.py`, `rdf_to_vault.py`). I
 database, write-time validation, incremental sync, query interface, or drift detection.
 This crate adds those on top of SparrowOntology + SparrowDB.
 
-> **Status: scaffold.** Module layout, public types, and CLI surface are in place.
-> Every operation that reads a vault or touches a DB returns
-> `VaultError::NotImplemented { operation, slice }`. The only real code is the
-> dependency-free parsing primitives (frontmatter split, wiki-link grammar,
-> layer classification, scoped-base lookup), which have unit tests.
-> `publish = false` until the first functional slice lands.
+> **Status: parse + DB-free `check`.** Frontmatter YAML, vault walking, composed
+> `context.jsonld`, IRI minting, and the DB-free `vault check` lints are
+> implemented. Sync/export/drift/watch still return
+> `VaultError::NotImplemented { operation, slice }`.
+> `publish = false` until a slice that writes the DB lands.
 
 ## Mapping Vault-LD concepts to modules
 
@@ -42,7 +41,7 @@ This crate adds those on top of SparrowOntology + SparrowDB.
 sparrow-ontology vault sync   <vault> --db <path> [--vault-authoritative] [--hard-delete]
 sparrow-ontology vault watch  <vault> --db <path> [--hard-delete]
 sparrow-ontology vault export <vault> --db <path> [--dry-run]
-sparrow-ontology vault check  <vault> --db <path> [--json]
+sparrow-ontology vault check  <vault> [--db <path>] [--json]
 sparrow-ontology vault drift  <vault> --db <path> [--json]
 ```
 
@@ -99,11 +98,15 @@ Found while scaffolding, still undecided:
   flagged, unmapped triples.
 - **Drift manifest location.** A sidecar file in the vault (diff-friendly, but it pollutes
   the vault) or reserved nodes in the DB (invisible to git)?
-- **YAML dialect.** The reference exporter uses PyYAML 6 (YAML **1.1**) with a custom
-  loader. YAML 1.1 and 1.2 disagree on `yes`/`no`/`on`/`off` and on implicit timestamps,
-  so byte-level isomorphism depends on matching 1.1 scalar resolution. `serde_yaml` is
-  archived. Candidates are `saphyr` (1.2, has source markers for line-numbered
-  diagnostics) and `serde_norway`. Decide in the parse slice.
+- **YAML dialect — decided: `saphyr` 0.0.12 (YAML 1.2).** `MarkedYaml` spans give
+  line-numbered `MalformedFrontmatter` diagnostics, which `serde_norway` (libyaml /
+  YAML 1.1, closer to PyYAML) does not. **Isomorphism tradeoff:** the reference
+  exporter (`vault_to_rdf.py`) uses PyYAML 6 = YAML **1.1**, so `yes`/`no`/`on`/`off`
+  become booleans and implicit timestamps become datetimes there, while this crate
+  keeps them as strings (YAML 1.2 Core Schema). Graph isomorphism with the
+  reference exporter will need a scalar-resolution shim (or to compare graphs, not
+  YAML bytes) for those values; we will not silently match 1.1 just to make a
+  byte-diff green. `serde_yaml` is archived and was not a candidate.
 - **Frontmatter delimiting.** `vault_to_rdf.py` splits on the first two raw `---`
   substrings. This crate matches whole `---` lines, which is correct YAML. The two
   diverge on a value that contains `---`. Record it as a known deviation, or mirror the

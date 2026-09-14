@@ -6,8 +6,7 @@ description = "Vault-LD engine for Sparrow Ontology — sync, validate, and drif
 license = "MIT"
 repository = "https://github.com/ryaker/SparrowOntology"
 homepage = "https://github.com/ryaker/SparrowOntology"
-# Scaffold only: public entry points return `VaultError::NotImplemented`.
-# Flip this once the parse + check slices land.
+# Not published until a slice that writes the DB lands.
 publish = false
 
 [dependencies]
@@ -15,12 +14,22 @@ sparrowdb-ontology-core = { path = "../sparrowdb-ontology-core", version = "0.1.
 # Needed only for the `GraphDb` handle in sync/export/drift signatures.
 sparrowdb = "0.1.20"
 thiserror = "1"
+# YAML 1.2 frontmatter decoding with source spans for line-numbered
+# diagnostics (parse slice; decision recorded in README open questions).
+saphyr = "0.0.12"
+# context.jsonld composition and CheckReport --json output (parse slice).
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+# Non-Markdown vault entries are skipped with a debug-level note.
+log = "0.4"
 
 # Deliberately NOT added yet (each lands with the slice that needs it, with
 # justification in that PR per spec §2.6):
-#   - a YAML parser for frontmatter        (parse slice)
 #   - `notify` for `watch`, feature-gated   (watch slice)
 #   - content hashing for drift manifests   (drift slice)
+
+[dev-dependencies]
+tempfile = "3"
 
 [[test]]
 name = "test_vault_conformance"

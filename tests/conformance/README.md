@@ -4,7 +4,9 @@ Target: **eventual graph isomorphism** between `sparrowdb-vault` and the upstrea
 reference converters of [Vault-LD](https://github.com/The-Knowledge-Graph-Guys/vault-ld)
 spec v0.5.0, pinned at upstream commit `025e71be8d810e387dc451c920e05472d1c47170`.
 
-Tests live in `test_vault_conformance.rs` and are `#[ignore]`d until their slice lands.
+Tests live in `test_vault_conformance.rs`. Parse-slice `check` tests against
+seeded vaults under `vaults/` are live; sync/export/isomorphism tests stay
+`#[ignore]`d until their slice lands.
 
 ## Fixtures — fetched, not vendored
 
@@ -39,5 +41,6 @@ rdflib.compare.isomorphic(ref_union, ours_union)
 - [ ] decide how `vld:path` triples are compared (roundtrip-face export only)
 - [ ] un-ignore `example_vault_isomorphic_to_reference_exporter`
 - [ ] un-ignore `sync_export_roundtrip_is_idempotent`
-- [ ] seeded-error vaults + un-ignore `check_reports_three_seeded_error_kinds`
-- [ ] un-ignore `malformed_frontmatter_is_skipped_not_fatal`
+- [ ] un-ignore `check_reports_three_seeded_error_kinds` (needs UnknownProperty / RelationRangeViolation)
+- [x] seeded-error vaults (`clean`, `dangling-link`, `relative-id`, `malformed-yaml`, `unknown-property`)
+- [x] un-ignore `malformed_frontmatter_is_skipped_not_fatal` (via `check`; sync reuse later)
