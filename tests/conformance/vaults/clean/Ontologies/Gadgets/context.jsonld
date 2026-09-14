@@ -1,0 +1,7 @@
+{
+  "@context": {
+    "@base": "https://example.org/gadgets#",
+    "gad": "https://example.org/gadgets#",
+    "massGrams": { "@id": "gad:massGrams", "@type": "xsd:integer" }
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "@context": [
+    {
+      "@base": "https://example.org/",
+      "type": "@type",
+      "id": "@id",
+      "owl": "http://www.w3.org/2002/07/owl#",
+      "rdfs": "http://www.w3.org/2000/01/rdf-schema#",
+      "xsd": "http://www.w3.org/2001/XMLSchema#",
+      "label": "rdfs:label",
+      "comment": "rdfs:comment"
+    },
+    "Ontologies/Gadgets/context.jsonld"
+  ]
+}

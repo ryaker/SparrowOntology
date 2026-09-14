@@ -1,0 +1,7 @@
+{
+  "@context": {
+    "@base": "https://example.org/",
+    "type": "@type",
+    "id": "@id"
+  }
+}
