@@ -341,9 +341,14 @@ Export every entity and relationship as Turtle.
   "orphan_labels": [],
   "orphan_relation_types": [],
   "dangling_edges": 0,
+  "unrepresentable_iris": 0,
   "issues": []
 }
 ```
+
+`unrepresentable_iris` counts classes or entities whose name could not form a
+valid IRI (e.g. a class name containing a space) — skipped and named in
+`issues` rather than aborting the export.
 
 Entities that carry a stored IRI from a previous import keep it; the rest are
 minted as `{base_iri}/{ClassName}/{node_id}`. Export is read-only.
@@ -393,3 +398,10 @@ new one.
 Nothing is dropped silently — every skipped subject appears in `skips` with its
 IRI and an actionable reason. Blank nodes are counted and skipped (blank-node
 preservation is out of scope).
+
+**Partial failure:** the tool call's top-level result carries `"isError":
+true` whenever anything was skipped (`entities_skipped + relationships_skipped
++ blank_nodes_skipped > 0`), matching the CLI's `cmd_import_data`, which
+treats any skip as a pipeline-gate failure. A client that checks `isError`
+before parsing `content` — the documented MCP pattern — sees an import that
+skipped everything as a failure, not a clean-looking success.
