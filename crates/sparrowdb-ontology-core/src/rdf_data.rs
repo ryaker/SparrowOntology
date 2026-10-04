@@ -87,6 +87,30 @@
 //! **counted and reported** as [`ExportReport::orphan_properties`] rather than
 //! dropped in silence.
 //!
+//! # Re-import is not idempotent
+//!
+//! [`import_data_turtle`] is safe to call once against an empty (or
+//! never-imported) database. It is **not** safe to call a second time
+//! against a database that already holds the data and expect a no-op:
+//!
+//! - **Entities.** The write path dedups an incoming node against an
+//!   existing one only when *every* stored column matches exactly — not on
+//!   [`SOURCE_IRI_KEY`](crate::namespace::SOURCE_IRI_KEY) alone. If even one
+//!   property value changed since the first import (or the ontology gained a
+//!   property), re-importing the same subject IRI creates a **second** node
+//!   carrying that IRI instead of updating the first.
+//! - **Relationships.** Edge creation has no dedup at all. Re-importing
+//!   identical Turtle into a database that already has it **doubles** every
+//!   relationship between the same pair of entities.
+//!
+//! Neither case is visible in [`ImportReport`] — there is no "this
+//! duplicated an existing entity/edge" counter, only counts for what was
+//! newly created. A caller that needs incremental sync (as opposed to a
+//! one-shot import into an empty database) must wipe the target data first,
+//! or de-duplicate the Turtle against current database state before calling
+//! [`import_data_turtle`]. This is a design gap, not a bug fixable from this
+//! function alone — tracked as a follow-up rather than addressed here.
+//!
 //! # Non-goals (WS1)
 //!
 //! No SPARQL engine, no named graphs, no reasoning, and no blank-node
@@ -528,8 +552,13 @@ fn invalid(msg: String) -> SoError {
     SoError::Storage(sparrowdb_common::Error::InvalidArgument(msg))
 }
 
-/// Run a query against a pinned snapshot, treating "unknown label"/"unknown
+/// Run a query through a shared [`ReadTx`], treating "unknown label"/"unknown
 /// relationship type" as empty.
+///
+/// NOTE: despite `ReadTx`'s name and its `snapshot_txn_id` field, this does
+/// **not** give the query a point-in-time view of *structural* state (nodes,
+/// edges). See the "Snapshot isolation" section on [`collect_data_triples`]
+/// for what is and is not actually guaranteed here.
 fn execute_or_empty(tx: &ReadTx, q: &str) -> Result<sparrowdb_execution::QueryResult, SoError> {
     match tx.query(q) {
         Ok(r) => Ok(r),
@@ -548,7 +577,7 @@ fn execute_or_empty(tx: &ReadTx, q: &str) -> Result<sparrowdb_execution::QueryRe
 /// (RDF graphs are sets — a duplicate edge in storage must not become a
 /// duplicate triple) and yields a stable order across runs.
 ///
-/// ## Snapshot isolation
+/// ## Snapshot isolation — NOT closed, despite the shared [`ReadTx`]
 ///
 /// The entity pass and the relationship pass each issue one query per
 /// label/relation-type. Without a shared snapshot, a write committed between
@@ -556,8 +585,30 @@ fn execute_or_empty(tx: &ReadTx, q: &str) -> Result<sparrowdb_execution::QueryRe
 /// created after the entity pass scanned its label, then linked by an edge the
 /// relationship pass *does* see. `subject_by_id` would have no entry for that
 /// node, and the edge would be misreported as dangling even though it is live.
-/// Pinning one [`ReadTx`] for the whole traversal makes every query in this
-/// function see the same committed state, so that race cannot occur.
+///
+/// This function opens one [`ReadTx`] and routes every query through it,
+/// which looks like the fix for that race. **It is not**, on the pinned
+/// engine (SparrowDB `903ea739` / 0.1.27, tracked upstream as SparrowDB
+/// #533): `ReadTx::query()` only pins *property-value* reads (via the MVCC
+/// version chain, consulted by `ReadTx::get_node`, which this module does
+/// not call). Structural state — which nodes and edges exist — is read
+/// fresh from disk on every call, live, regardless of `snapshot_txn_id`.
+/// This is SparrowDB's own documented behavior (see `readtx_query.rs`
+/// module docs in that crate) and was confirmed empirically here: a
+/// `ReadTx` opened before a `CREATE`, then queried after that `CREATE`
+/// commits on the same handle, sees the new row (2 rows observed, not 1).
+///
+/// Concretely: the exact race described above — a node created and linked
+/// between the entity and relationship passes — is **still possible**. A
+/// shared `ReadTx` costs nothing and does at least pin property-value reads
+/// consistently, and positions this code to gain real structural isolation
+/// for free if `ReadTx::query()` ever gains it, so it is kept. But nothing
+/// in `sparrowdb-ontology-core` can close this gap alone; it needs either an
+/// engine-level fix upstream, or this crate holding SparrowDB's exclusive
+/// single-writer lock (`GraphDb::begin_write`) for the export's duration as a
+/// coarser, intra-process-only substitute — a design decision, not made
+/// here. `dangling_edges` in [`ExportReport`] is the symptom a caller would
+/// see if this race is hit.
 fn collect_data_triples(
     db: &GraphDb,
     base_iri: &str,
@@ -1048,6 +1099,12 @@ struct SubjectData {
 /// Nothing is dropped silently: every skipped subject or triple is recorded in
 /// [`ImportReport::skips`] with the offending subject IRI and an actionable reason.
 ///
+/// # Not idempotent
+/// Calling this twice against a database that already holds the data is
+/// **not** a no-op: it can create duplicate entities and always duplicates
+/// relationships. See the "Re-import is not idempotent" section in the module
+/// docs before using this for incremental sync.
+///
 /// # Errors
 /// Returns `SoError` only for storage-level failures that affect the whole
 /// import. Per-subject problems are collected in the report.
@@ -1267,7 +1324,15 @@ pub fn import_data_turtle(
     // double-counted).
     if strategy == ImportStrategy::AutoDeclare {
         let mut added = false;
-        let mut declared_this_pass: HashSet<String> = HashSet::new();
+        // Maps resolved relation name -> the first predicate IRI that
+        // declared it this pass. Mirrors the property-declaration pass
+        // above: relations, like properties, are keyed by name in the
+        // ontology, so only the first predicate can be declared — but a
+        // second, distinct predicate colliding on the same local name must
+        // still be reported rather than dropped with no explanation (a
+        // plain `HashSet` cannot tell "already declared by this exact
+        // predicate" from "declared by a colliding one").
+        let mut declared_this_pass: HashMap<String, String> = HashMap::new();
         for (iri, data) in &subjects {
             let Some(src_class) = class_of.get(iri) else {
                 continue;
@@ -1284,13 +1349,24 @@ pub fn import_data_turtle(
                         .get(src_class)
                         .map(|m| m.contains_key(&name))
                         .unwrap_or(false)
-                    || !declared_this_pass.insert(name.clone())
                 {
+                    continue;
+                }
+                if let Some(prior_pred) = declared_this_pass.get(&name) {
+                    if prior_pred != pred {
+                        report.warnings.push(format!(
+                            "Subject <{iri}>: predicates <{prior_pred}> and <{pred}> both \
+                             resolve to relation name '{name}'; only <{prior_pred}> was \
+                             auto-declared as its source_iri. Declare <{pred}> explicitly with \
+                             a distinct relation name to keep both."
+                        ));
+                    }
                     continue;
                 }
                 let Some(dst_class) = class_of.get(target) else {
                     continue; // handled as a skip in the relationship pass
                 };
+                declared_this_pass.insert(name.clone(), pred.clone());
                 write_relation_node(db, &name, "", pred, Some(src_class), Some(dst_class))?;
                 report.relations_declared += 1;
                 added = true;
@@ -1315,8 +1391,9 @@ pub fn import_data_turtle(
         // Tracks which predicate IRI first populated each resolved property
         // name, so a second, distinct predicate that resolves to the same
         // name (e.g. two IRIs sharing a local name, both falling back to
-        // `local_name`) is reported instead of silently overwriting the
-        // first value.
+        // `local_name`) is caught below instead of silently overwriting the
+        // first value: the whole entity is skipped, same as any other
+        // per-property failure in this loop (see `failed` below).
         let mut name_source: HashMap<String, String> = HashMap::new();
         let mut failed: Option<String> = None;
 
@@ -1335,19 +1412,25 @@ pub fn import_data_turtle(
                 ));
                 break;
             };
+            // Two distinct predicates resolving to the same property name
+            // (they share a local name and neither has a distinct
+            // source_iri-registered property) is ambiguous, not resolvable
+            // by picking either value — skip the entity rather than
+            // silently keep one and discard the other.
+            if let Some(prior_pred) = name_source.get(&name) {
+                if prior_pred != pred {
+                    failed = Some(format!(
+                        "Subject <{iri}>: predicates <{prior_pred}> and <{pred}> both resolve to \
+                         property '{name}' on class '{class}' (they share a local name and \
+                         neither has a distinct source_iri-registered property). This entity was \
+                         not imported — give one of them an explicit, source_iri-registered \
+                         property to disambiguate."
+                    ));
+                    break;
+                }
+            }
             match literal_to_property_value(&prop.datatype, lit) {
                 Ok(v) => {
-                    if let Some(prior_pred) = name_source.get(&name) {
-                        if prior_pred != pred {
-                            report.warnings.push(format!(
-                                "Subject <{iri}>: predicates <{prior_pred}> and <{pred}> both \
-                                 resolve to property '{name}' on class '{class}'; the value \
-                                 from <{pred}> was kept and <{prior_pred}>'s was discarded. \
-                                 Give one of them an explicit source_iri-registered property to \
-                                 disambiguate."
-                            ));
-                        }
-                    }
                     name_source.insert(name.clone(), pred.clone());
                     props.insert(name, v);
                 }
@@ -1398,12 +1481,38 @@ pub fn import_data_turtle(
         let Some((src_id, src_class)) = node_of.get(iri) else {
             continue;
         };
+        // Tracks which predicate IRI first resolved to each relation name for
+        // THIS subject. Unlike the entity-property case above, a relation can
+        // legitimately be multi-valued (the same predicate pointing at
+        // several targets is normal and not a collision), so a match here
+        // does not block edge creation — both edges are still written. But
+        // two *distinct* predicates silently merging into one relation type
+        // (they share a local name and neither has a distinct
+        // source_iri-registered relation) is a real ambiguity that would
+        // otherwise vanish with no trace, so it is reported.
+        let mut rel_name_source: HashMap<String, String> = HashMap::new();
         for (pred, target) in &data.links {
             let rel_name = idx
                 .relation_by_iri
                 .get(pred)
                 .cloned()
                 .unwrap_or_else(|| local_name(pred));
+
+            match rel_name_source.get(&rel_name) {
+                Some(prior_pred) if prior_pred != pred => {
+                    report.warnings.push(format!(
+                        "Subject <{iri}>: predicates <{prior_pred}> and <{pred}> both resolve to \
+                         relation '{rel_name}' (they share a local name and neither has a \
+                         distinct source_iri-registered relation). Both edges were created under \
+                         '{rel_name}' — give one of them an explicit, source_iri-registered \
+                         relation to disambiguate."
+                    ));
+                }
+                Some(_) => {}
+                None => {
+                    rel_name_source.insert(rel_name.clone(), pred.clone());
+                }
+            }
 
             if !idx.relation_iri.contains_key(&rel_name) {
                 report.relationships_skipped += 1;
@@ -1600,5 +1709,129 @@ mod tests {
             assert_eq!(s.parse::<f64>().unwrap(), v, "{s} should re-parse to {v}");
         }
         assert_eq!(fmt_f64(2.0), "2");
+    }
+
+    /// Two distinct predicate IRIs that share a local name ("desc") and are
+    /// both unregistered (no source_iri on either) resolve to the *same*
+    /// ontology property on import. Neither value is more correct than the
+    /// other, so the entity must be skipped and reported — never partially
+    /// imported with one value silently discarded.
+    ///
+    /// Expected values derived by hand from the fixture: one subject, two
+    /// colliding predicates, zero unambiguous property assignments possible.
+    #[test]
+    fn colliding_predicate_local_names_skip_the_entity() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = GraphDb::open(dir.path()).unwrap();
+
+        write_class_node(&db, "Person", "", "https://ex.test/schema/Person").unwrap();
+        crate::init::add_property(
+            &db, "Person", "desc", "string", false, false, None, None, None,
+        )
+        .unwrap();
+
+        let turtle = r#"
+            @prefix a: <http://ns-a.example/> .
+            @prefix b: <http://ns-b.example/> .
+            <http://ex.test/p1> a <https://ex.test/schema/Person> ;
+                a:desc "internal notes" ;
+                b:desc "public bio" .
+        "#;
+
+        let report = import_data_turtle(&db, turtle, ImportStrategy::Strict).unwrap();
+
+        assert_eq!(
+            report.entities_imported, 0,
+            "the colliding entity must not be counted as imported"
+        );
+        assert_eq!(report.entities_skipped, 1, "it must be counted as skipped");
+        assert_eq!(report.skips.len(), 1);
+        assert!(
+            report.skips[0].reason.contains("desc"),
+            "skip reason should name the colliding property: {}",
+            report.skips[0].reason
+        );
+
+        // No node of class Person should have been written at all.
+        let count = db
+            .execute("MATCH (n:Person) RETURN count(n)")
+            .unwrap()
+            .rows
+            .first()
+            .and_then(|r| r.first().cloned());
+        assert_eq!(
+            count,
+            Some(ExecValue::Int64(0)),
+            "no Person node should exist — the collision must block the write, \
+             not just warn after one value already overwrote the other"
+        );
+    }
+
+    /// Two distinct predicate IRIs sharing a local name ("knows") that
+    /// *neither* is registered for, imported with `AutoDeclare`. Exercises
+    /// both remaining `local_name(pred)` fallback sites: relation
+    /// auto-declaration and relationship creation.
+    ///
+    /// Unlike the entity-property case, a relation can legitimately be
+    /// multi-valued (one subject, several targets, same predicate is normal),
+    /// so this must NOT block edge creation — both edges are expected to be
+    /// written. What must NOT happen is the two distinct predicates merging
+    /// into one relation type with no trace of the ambiguity.
+    ///
+    /// Expected values derived by hand from the fixture:
+    /// - 3 entities (s1, s2, s3), all class Person.
+    /// - `a:knows` is encountered first in Turtle order for s1's links, so it
+    ///   is the one auto-declared as relation "knows" (relations_declared=1,
+    ///   not 2 — the ontology cannot hold two relations named "knows").
+    /// - `b:knows` collides with the already-declared "knows" in BOTH the
+    ///   auto-declare pass (warn, don't re-declare) and the
+    ///   relationship-creation pass (warn, but still create the edge) — 2
+    ///   warnings total.
+    /// - Both s1->s2 (via a:knows) and s1->s3 (via b:knows) edges are
+    ///   created: relationships_imported=2, relationships_skipped=0.
+    #[test]
+    fn colliding_relation_local_names_are_warned_not_silently_merged() {
+        let dir = tempfile::tempdir().unwrap();
+        let db = GraphDb::open(dir.path()).unwrap();
+
+        write_class_node(&db, "Person", "", "https://ex.test/schema/Person").unwrap();
+
+        let turtle = r#"
+            @prefix a: <http://ns-a.example/> .
+            @prefix b: <http://ns-b.example/> .
+            <http://ex.test/s1> a <https://ex.test/schema/Person> .
+            <http://ex.test/s2> a <https://ex.test/schema/Person> .
+            <http://ex.test/s3> a <https://ex.test/schema/Person> .
+            <http://ex.test/s1> a:knows <http://ex.test/s2> .
+            <http://ex.test/s1> b:knows <http://ex.test/s3> .
+        "#;
+
+        let report = import_data_turtle(&db, turtle, ImportStrategy::AutoDeclare).unwrap();
+
+        assert_eq!(report.entities_imported, 3, "s1, s2, s3 all import cleanly");
+        assert_eq!(report.entities_skipped, 0);
+        assert_eq!(
+            report.relations_declared, 1,
+            "only the first-seen predicate (a:knows) is auto-declared as 'knows'"
+        );
+        assert_eq!(
+            report.relationships_imported, 2,
+            "both edges must still be created — a relation can be multi-valued, \
+             the collision is about naming, not about which edge is 'correct'"
+        );
+        assert_eq!(report.relationships_skipped, 0);
+
+        let collision_warnings: Vec<&String> = report
+            .warnings
+            .iter()
+            .filter(|w| w.contains("knows"))
+            .collect();
+        assert_eq!(
+            collision_warnings.len(),
+            2,
+            "expected one warning from the auto-declare pass and one from the \
+             relationship-creation pass, got: {:?}",
+            report.warnings
+        );
     }
 }
